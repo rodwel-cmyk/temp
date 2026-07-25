@@ -1,0 +1,62 @@
+# Layer 1 linter — DECLARATIVE FLOOR MANIFEST
+# ---------------------------------------------------------------------------
+# Floors lifted VERBATIM from layer1_lint.py v0.2.8 hardcoded constants
+# (REQUIRED_NEVERWRITE_IDS, REQUIRED_DROPZONE_IDS, CANONICAL_PRECEDENCE, GATE-V pin).
+# Behaviour-preservation contract: every value here == the original hardcoded value.
+# The engine sha1-pins this file and verifies it at load; a missing / unreadable /
+# sha1-mismatched manifest aborts with a dedicated init error and exit code 3.
+#
+# Partition-readiness (F-series): every entry is tagged `scope: org|personal`
+# (default org) + a `tier`. The loader PROJECTS these declarative dicts into the
+# exact native primitives the legacy engine expects (flat set/list of ID *strings*)
+# BEFORE they reach C00-C13; the scope/tier metadata NEVER enters the set-math.
+#
+# v1.1 (2026-07-25, 869drd6uy): + top-level `tier:` declaration — the forward-compat
+# hook for the tier-aware ENGINE/POLICY/SCOPE split. No floor value changed.
+# ---------------------------------------------------------------------------
+manifest_version: "1.1"
+source_engine_version: "0.2.8"
+
+# --- Tier declaration (869drd6uy) -------------------------------------------
+# WHICH governance tier this manifest is the policy floor for. Permissions exist
+# at three tiers (Organisation -> Personal Level-1 -> Project). The engine
+# validates this value against {org, personal, project} at load (fail-closed
+# InitError, never a silent default) and exposes it as MANIFEST_TIER; it never
+# enters the C00-C13 set-math. Only the personal tier exists today; org/project
+# manifests are follow-on work (each generated FROM its tier's source doc and
+# sha1-pinned, per the tier-split design: org-floor <= personal-floor <= project-floor).
+tier: personal
+
+# --- C10 hardcoded root-of-trust floor (8 IDs) -----------------------------
+never_write_ids:
+  - { id: "385430558352",  scope: org, tier: root_of_trust, desc: "DO-NOT-TOUCH subtree (root of trust)" }
+  - { id: "367428637440",  scope: org, tier: root_of_trust, desc: "Claude Reference Files root" }
+  - { id: "370218784710",  scope: org, tier: governance,    desc: "governance folder" }
+  - { id: "2144079006133", scope: org, tier: root_of_trust, desc: "Operating Profile (OP)" }
+  - { id: "2172078880293", scope: org, tier: root_of_trust, desc: "Ops Integrity (OI)" }
+  - { id: "2151742321898", scope: org, tier: root_of_trust, desc: "CSJ" }
+  - { id: "2167953632793", scope: org, tier: root_of_trust, desc: "Max Layer 1 pointer" }
+  - { id: "7855441749",    scope: org, tier: root_of_trust, desc: "CloudHQ backup mirror (v4.0)" }
+
+# --- C11 hardcoded create-only drop-zone floor (2 IDs) ---------------------
+drop_zone_ids:
+  - { id: "977588333",   scope: org, tier: drop_zone, desc: "Uploads" }
+  - { id: "86746916736", scope: org, tier: drop_zone, desc: "To Sort" }
+
+# --- C04 canonical precedence (7 tiers, order is load-bearing) --------------
+# Projected to a list of name-strings in ascending `tier` order.
+precedence:
+  - { name: "native_gates",                       tier: 1, scope: org }
+  - { name: "failsafe_lockdown",                  tier: 2, scope: org }
+  - { name: "gate_v",                             tier: 3, scope: org }
+  - { name: "never_write_never_grant",            tier: 4, scope: org }
+  - { name: "org_instructions",                   tier: 5, scope: org }
+  - { name: "pointer_ceilings_mandate_registry",  tier: 6, scope: org }
+  - { name: "operational_how_to",                 tier: 7, scope: org }
+
+# --- GATE-V pin (recorded; C08 cross-checks the pin carried in the doc) -----
+gate_v_pin:
+  sha1: "d6d54ae7d1d632f54e7f122efa3a1ccae7269860"
+  version_expected: "v3.1"
+  scope: org
+  tier: immutable_core

@@ -1,0 +1,112 @@
+diff --git a/layer1_lint.py b/layer1_lint.py
+index 312b852..dcbeb8a 100644
+--- a/layer1_lint.py
++++ b/layer1_lint.py
+@@ -86,6 +86,51 @@ class InitError(Exception):
+     C00-C13 verdict (F2)."""
+ 
+ 
++# ============================================================================
++# 869dthz60 BOUNDED LOADER — alias-bomb ("billion-laughs") guard on the SHARED parse path.
++# PyYAML safe_load has no alias-expansion budget: a ~7-level anchored alias bomb makes the load
++# (and the engine's subsequent tree traversal) exceed the wall-time bound on both the oracle and
++# split engine (pre-existing shared exposure; availability/DoS, likelihood LOW). Guard, applied
++# BEFORE construction on every linter yaml.safe_load (pointer block + manifest):
++#   (a) INPUT-SIZE CAP  — the yaml text may not exceed YAML_MAX_BYTES;
++#   (b) ALIAS BUDGET    — alias events are counted via PyYAML's event parser (parsing emits
++#       events WITHOUT constructing/expanding, so the scan is O(input) and cannot blow up);
++#       budget 0: Layer 1 governance YAML is alias-free by construction, so ANY alias/anchor
++#       use is rejected (deterministic — no wall-clock timeout, which would break determinism).
++# A breach raises BoundedLoadError -> the pointer path reports it as a clean C00 FAIL and the
++# manifest path as INIT-FAILURE exit 3. A malformed (non-bomb) input is deliberately re-parsed
++# by yaml.safe_load so the canonical error message is byte-identical to the pre-guard engine.
++# ============================================================================
++YAML_MAX_BYTES = 2_000_000
++YAML_ALIAS_BUDGET = 0
++
++
++class BoundedLoadError(ValueError):
++    """A bounded-loader cap breach (size / alias budget) — never a crash, never a hang."""
++
++
++def bounded_safe_load(text, what="yaml block"):
++    """yaml.safe_load with the 869dthz60 size + alias-budget guard. `text` may be str or bytes."""
++    nbytes = len(text.encode("utf-8")) if isinstance(text, str) else len(text)
++    if nbytes > YAML_MAX_BYTES:
++        raise BoundedLoadError(f"{what} exceeds the bounded-loader size cap "
++                               f"({nbytes} > {YAML_MAX_BYTES} bytes)")
++    aliases = 0
++    try:
++        for ev in yaml.parse(text, Loader=yaml.SafeLoader):
++            if isinstance(ev, yaml.events.AliasEvent):
++                aliases += 1
++                if aliases > YAML_ALIAS_BUDGET:
++                    raise BoundedLoadError(
++                        f"{what} exceeds the alias budget (> {YAML_ALIAS_BUDGET} alias/anchor "
++                        f"references — alias-expansion bomb guard; governance YAML is alias-free)")
++    except BoundedLoadError:
++        raise
++    except yaml.YAMLError:
++        pass          # malformed input: fall through so safe_load raises the CANONICAL error
++    return yaml.safe_load(text)
++
++
+ def _read_pinned(path, want_sha1, label):
+     """Read `path` as raw bytes and assert sha1 == want_sha1. A read error or a sha1 mismatch
+     (corruption, a Git core.autocrlf CRLF rewrite, or a wrong-version file) raises InitError."""
+@@ -133,8 +178,8 @@ def _load_manifest():
+     v1.1 (869drd6uy): also validates + returns the manifest's top-level `tier:` declaration."""
+     raw = _read_pinned(MANIFEST_PATH, MANIFEST_SHA1, "manifest")
+     try:
+-        m = yaml.safe_load(raw)
+-    except yaml.YAMLError as e:
++        m = bounded_safe_load(raw, what="manifest")   # 869dthz60: shared bounded parse path
++    except (yaml.YAMLError, BoundedLoadError) as e:
+         raise InitError(f"manifest YAML parse failed: {e}")
+     if not isinstance(m, dict):
+         raise InitError(f"manifest is {type(m).__name__}, not a mapping")
+@@ -184,7 +229,7 @@ def split_doc(text):
+ 
+ 
+ def load_data(yaml_text):
+-    doc = yaml.safe_load(yaml_text)
++    doc = bounded_safe_load(yaml_text)   # 869dthz60: bounded (size + alias budget) parse path
+     if not isinstance(doc, dict) or "layer1_data" not in doc:
+         raise ValueError("YAML block missing top-level 'layer1_data'")
+     ld = doc["layer1_data"]
+diff --git a/test_layer1_lint.py b/test_layer1_lint.py
+index d126075..89283a7 100644
+--- a/test_layer1_lint.py
++++ b/test_layer1_lint.py
+@@ -197,6 +197,31 @@ FIXTURES = [
+                     '    not_never_write:                            # renamed away\n', "FX33"),
+      frozenset({"C10", "C12"})),
+     # ---- v3.1 carve-out fixture ----
++    # ---- 869dthz60 bounded-loader fixtures (alias-bomb guard on the shared parse path) ----
++    # FX35 reuses the differential harness's alias-bomb probe structure (7 anchored levels x9 ->
++    # ~9^6 expansion) INSIDE the pointer's yaml block. Pre-guard engines hang/crawl here; the
++    # bounded loader must reject it as a clean, FAST single C00 FAIL (alias budget, pre-expansion).
++    ("FX35-alias-bomb",
++     "the harness's 7-level alias-expansion bomb injected into the data block — bounded loader "
++     "rejects at the alias budget BEFORE construction; clean single C00 FAIL, no hang",
++     lambda t: _sub(t, "layer1_data:\n  precedence:",
++                    "layer1_data:\n"
++                    "  a0: &a [x,x,x,x,x,x,x,x,x]\n  b0: &b [*a,*a,*a,*a,*a,*a,*a,*a,*a]\n"
++                    "  c0: &c [*b,*b,*b,*b,*b,*b,*b,*b,*b]\n  d0: &d [*c,*c,*c,*c,*c,*c,*c,*c,*c]\n"
++                    "  e0: &e [*d,*d,*d,*d,*d,*d,*d,*d,*d]\n  f0: &f [*e,*e,*e,*e,*e,*e,*e,*e,*e]\n"
++                    "  g0: [*f,*f,*f,*f,*f,*f,*f,*f,*f]\n  precedence:", "FX35"),
++     frozenset({"C00"})),
++    ("FX36-single-alias",
++     "even ONE anchor/alias pair trips the zero alias budget (governance YAML is alias-free by "
++     "construction) — pins the budget=0 semantics so it cannot silently loosen",
++     lambda t: _sub(t, "layer1_data:\n  precedence:",
++                    "layer1_data:\n  anchor0: &one [1]\n  alias0: *one\n  precedence:", "FX36"),
++     frozenset({"C00"})),
++    ("FX37-oversize-yaml-block",
++     "a yaml block padded past YAML_MAX_BYTES trips the input-size cap before any parse",
++     lambda t: _sub(t, "layer1_data:\n  precedence:",
++                    "layer1_data:\n  pad: \"" + ("x" * 2_000_001) + "\"\n  precedence:", "FX37"),
++     frozenset({"C00"})),
+     ("FX34-crossclass-duplicate",
+      "an allow_list entry is INJECTED whose field-id is the never_write JR Status id (f22a77f7) — a "
+      "field-id cannot live in two classes; C07's class-disjointness invariant catches the contradiction. "

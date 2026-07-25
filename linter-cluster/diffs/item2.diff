@@ -1,0 +1,434 @@
+diff --git a/layer1_lint.py b/layer1_lint.py
+index 04f00d7..f87f4e3 100644
+--- a/layer1_lint.py
++++ b/layer1_lint.py
+@@ -127,6 +127,7 @@ def _load_manifest():
+         dz = frozenset(e["id"] for e in m["drop_zone_ids"])
+         prec = [e["name"] for e in sorted(m["precedence"], key=lambda e: e["tier"])]
+         pin = m["gate_v_pin"]["sha1"]
++        pin_ver = m["gate_v_pin"]["version_expected"]   # 869dtn48p: consumed by X02 pin coherence
+     except (KeyError, TypeError) as e:
+         raise InitError(f"manifest shape invalid: {type(e).__name__}: {e}")
+     for name, coll in (("never_write_ids", nw), ("drop_zone_ids", dz), ("precedence", prec)):
+@@ -134,7 +135,7 @@ def _load_manifest():
+             raise InitError(f"manifest {name} did not project to id/name-strings "
+                             f"(non-str element would corrupt set-math)")
+     tier = _validate_tier(m.get("tier"))
+-    return nw, dz, prec, pin, tier
++    return nw, dz, prec, pin, pin_ver, tier
+ 
+ 
+ def _load_baseline():
+@@ -147,7 +148,7 @@ def _load_baseline():
+ # (only the selftest/emit paths need it), so a baseline fault does not block a normal lint run.
+ try:
+     (REQUIRED_NEVERWRITE_IDS, REQUIRED_DROPZONE_IDS, CANONICAL_PRECEDENCE, GATE_V_PIN,
+-     MANIFEST_TIER) = _load_manifest()
++     GATE_V_VERSION_EXPECTED, MANIFEST_TIER) = _load_manifest()
+ except InitError as _e:
+     sys.stderr.write(f"INIT-FAILURE: {_e}\n")
+     sys.exit(INIT_EXIT)
+@@ -697,6 +698,115 @@ def coverage_tripwire(manifest=CLAUSE_MANIFEST, checks=CHECKS):
+     return ok, lines
+ 
+ 
++# ============================================================================
++# CROSS-DOC (XDOC) CHECK FAMILY — 869dtn48p. Parameterised: runs ONLY when doc copies /
++# live sha1s are supplied (--doc NAME=PATH / --live-sha NAME=HEX, or the selftest fixtures),
++# so default pointer-lint output stays byte-identical. The pointer YAML data block is the
++# single-source-of-truth; supplied sovereign-doc copies are checked AGAINST it. The live
++# server-side sha1 fetch is the connected seat's downstream step — this venue takes it as input.
++# ============================================================================
++XDOC_DOC_NAMES = ("gate_v", "rules", "tag_use", "charter")
++XDOC_ID_DOCS = ("rules", "tag_use", "charter")       # X01 scope: docs that RESTATE pointer IDs
++
++XDOC_CHECKS = {                                       # xid -> label (fns are orchestrated below)
++    "X00": "pointer parses for cross-doc comparison (structural gate)",
++    "X01": "every Box/ClickUp ID + field UUID quoted in supplied docs resolves to the pointer YAML data block",
++    "X02": "GATE-V pin mutually consistent: pointer sha1_pin + version_expected == manifest record",
++    "X03": "GATE-V pin matches the supplied live server-side sha1 (or supplied doc-copy sha1)",
++}
++XDOC_CLAUSES = {
++    "XL1": ("Rules/Tag Use/charter restate ONLY IDs the pointer data block holds (no cross-doc drift)", ["X01"]),
++    "XL2": ("GATE-V sha1_pin + declared version stay consistent AND match the live doc sha1 (mechanises the load-time assertion)", ["X02", "X03"]),
++    "XL0": ("Cross-doc comparison requires a parseable pointer (malformed = clean FAIL)", ["X00"]),
++}
++
++
++def run_xdoc_checks(pointer_text, docs=None, live_shas=None):
++    """869dtn48p orchestrator -> (results {xid: (ok, label, detail)}, skipped [info lines]).
++    docs: {name: str|bytes doc copy}; live_shas: {name: 40-hex server-side sha1}. Checks whose
++    inputs are absent are SKIPPED with an info line (parameterised activation — never a vacuous
++    PASS, never a block on missing optional input). Never raises on malformed content."""
++    docs, live_shas = docs or {}, live_shas or {}
++    skipped = []
++    try:
++        yaml_text, _prose = split_doc(pointer_text)
++        data = load_data(yaml_text)
++    except Exception as e:
++        return ({"X00": (False, XDOC_CHECKS["X00"],
++                         f"pointer parse failed: {type(e).__name__}: {e}")}, skipped)
++    results = {"X00": (True, XDOC_CHECKS["X00"], "pointer parses into a layer1_data mapping")}
++
++    # ---- X01: cross-doc ID coherence (spec (a)) — supplied docs' IDs must be a SUBSET of the
++    # pointer's parsed-YAML pool (single-source-of-truth; CONTEXTUAL_PROSE_IDS exempt).
++    pool = parsed_id_pool(data)
++    supplied = [n for n in XDOC_ID_DOCS if n in docs]
++    if supplied:
++        errs, notes = [], []
++        for name in supplied:
++            t = docs[name]
++            t = t.decode("utf-8", "replace") if isinstance(t, bytes) else str(t)
++            ids = set(LONGID_RE.findall(t)) | set(UUID_FIND_RE.findall(t))
++            orphan = sorted(i for i in ids if i not in pool and i not in CONTEXTUAL_PROSE_IDS)
++            notes.append(f"{name}:{len(ids)} ids")
++            if orphan:
++                errs.append(f"{name}: IDs absent from pointer YAML data: {orphan}")
++        absent = [n for n in XDOC_ID_DOCS if n not in docs]
++        if absent:
++            skipped.append(f"X01 partial: no copy supplied for {absent} (--doc NAME=PATH)")
++        results["X01"] = (not errs, XDOC_CHECKS["X01"],
++                          "; ".join(errs) if errs
++                          else f"single-source-of-truth holds [{'; '.join(notes)}]")
++    else:
++        skipped.append("X01 not run: no rules/tag_use/charter copy supplied (--doc NAME=PATH)")
++
++    # ---- X02: pin mutual consistency (spec (b), offline half) — pointer pointed_to_docs.gate_v
++    # {sha1_pin, version_expected} vs the manifest's recorded gate_v_pin. Always runnable.
++    ptd = data.get("pointed_to_docs")
++    gv = (ptd.get("gate_v") if isinstance(ptd, dict) else None)
++    gv = gv if isinstance(gv, dict) else {}
++    pin, ver = gv.get("sha1_pin"), gv.get("version_expected")
++    errs = []
++    pin_ok = isinstance(pin, str) and bool(SHA1_RE.fullmatch(pin))
++    if not pin_ok:
++        errs.append(f"pointer gate_v.sha1_pin malformed/absent: {pin!r}")
++    elif pin.lower() != GATE_V_PIN.lower():
++        errs.append(f"pointer gate_v.sha1_pin {pin} != manifest recorded pin {GATE_V_PIN}")
++    if ver != GATE_V_VERSION_EXPECTED:
++        errs.append(f"pointer gate_v.version_expected {ver!r} != manifest {GATE_V_VERSION_EXPECTED!r}")
++    results["X02"] = (not errs, XDOC_CHECKS["X02"],
++                      "; ".join(errs) if errs
++                      else f"pin + version consistent (...{GATE_V_PIN[-8:]}, {GATE_V_VERSION_EXPECTED})")
++
++    # ---- X03: pin vs live sha1 (spec (b), connected half) — compares the POINTER's pin (the
++    # operative load-time assertion) against a supplied live sha1, or the sha1 of a supplied
++    # byte-exact gate_v doc copy. Fail-closed: an unusable pointer pin fails X03 too.
++    live, src = live_shas.get("gate_v"), "supplied live sha1"
++    if live is None and "gate_v" in docs:
++        raw = docs["gate_v"]
++        raw = raw.encode("utf-8") if isinstance(raw, str) else raw
++        live, src = hashlib.sha1(raw).hexdigest(), "sha1(supplied gate_v doc copy)"
++    if live is not None:
++        live = str(live)
++        if not SHA1_RE.fullmatch(live):
++            results["X03"] = (False, XDOC_CHECKS["X03"], f"supplied gate_v sha1 malformed: {live!r}")
++        elif not pin_ok:
++            results["X03"] = (False, XDOC_CHECKS["X03"],
++                              "cannot verify: pointer gate_v.sha1_pin malformed/absent (see X02)")
++        else:
++            ok = live.lower() == pin.lower()
++            results["X03"] = (ok, XDOC_CHECKS["X03"],
++                              f"{src} ...{live[-8:]} == pointer pin" if ok
++                              else f"{src} {live} != pointer pin {pin} "
++                                   f"(GATE-V drift/tamper — the load-time assertion would lock down)")
++    else:
++        skipped.append("X03 not run: no live GATE-V sha1 (--live-sha gate_v=HEX) or gate_v doc copy "
++                       "supplied — the live fetch is the connected seat's downstream step")
++    for name in live_shas:
++        if name != "gate_v":
++            skipped.append(f"live sha1 for {name!r} supplied but not yet consumed (later cluster items)")
++    return results, skipped
++
++
+ # ============================================================================
+ # Runner
+ # ============================================================================
+@@ -727,13 +837,15 @@ def run_checks(text):
+     return results
+ 
+ 
+-def action_items(text, results=None):
++def action_items(text, results=None, xdoc=None):
+     """STEP 4 feed (issue-tracker pattern). Returns the list of human-action items
+     keyed by a STABLE finding-id, for an idempotent ClickUp upsert by the seat.
+     Clean run -> [] (no tasks for clean runs). The linter does NOT write ClickUp
+     itself here; it emits the feed and the seat upserts read-before-update.
+     `results` may be a precomputed run_checks() map (used by main()'s Phase-B read-error path to
+-    render a C00 FAIL without text); default None preserves the exact normal behaviour."""
++    render a C00 FAIL without text); default None preserves the exact normal behaviour.
++    `xdoc` (869dtn48p) is an optional (xdoc_results, skipped) pair — its FAILs join the feed
++    with the same item shape; default None keeps the feed byte-identical to v0.2.8."""
+     results = run_checks(text) if results is None else results
+     cov_ok, cov_lines = coverage_tripwire()
+     items = []
+@@ -747,7 +859,22 @@ def action_items(text, results=None):
+             if "UNCOVERED" in ln or "ORPHAN" in ln:
+                 items.append({"finding_id": "L1LINT-COVERAGE", "kind": "uncovered_rule",
+                               "summary": "coverage tripwire fired", "detail": ln.strip()})
+-    overall = all(r[0] for r in results.values()) and cov_ok
++    xdoc_ok = True
++    if xdoc is not None:
++        xresults, _xskipped = xdoc
++        xcov_ok, xcov_lines = coverage_tripwire(manifest=XDOC_CLAUSES, checks=XDOC_CHECKS)
++        for xid in sorted(xresults):
++            ok, label, detail = xresults[xid]
++            if not ok:
++                items.append({"finding_id": f"L1LINT-{xid}", "kind": "inconsistency",
++                              "check": xid, "summary": label, "detail": detail})
++        if not xcov_ok:
++            for ln in xcov_lines:
++                if "UNCOVERED" in ln or "ORPHAN" in ln:
++                    items.append({"finding_id": "L1LINT-XDOC-COVERAGE", "kind": "uncovered_rule",
++                                  "summary": "xdoc coverage tripwire fired", "detail": ln.strip()})
++        xdoc_ok = all(r[0] for r in xresults.values()) and xcov_ok
++    overall = all(r[0] for r in results.values()) and cov_ok and xdoc_ok
+     return {"result": "PASS" if overall else "FAIL",
+             "exit": 0 if overall else 1,
+             "action_items": items,          # -> ClickUp tasks (idempotent by finding_id)
+@@ -757,9 +884,11 @@ def action_items(text, results=None):
+             "proposed_checks": []}
+ 
+ 
+-def report(text, target="<pointer>", results=None, nbytes=None):
++def report(text, target="<pointer>", results=None, nbytes=None, xdoc=None):
+     # `results`/`nbytes` default None -> identical to the normal path; the Phase-B read-error
+     # path passes a precomputed C00 result + the raw byte count (text is unavailable then).
++    # `xdoc` (869dtn48p) default None -> byte-identical default report; when supplied it is the
++    # (xdoc_results, skipped) pair and a CROSS-DOC section is appended before RESULT.
+     results = run_checks(text) if results is None else results
+     cov_ok, cov_lines = coverage_tripwire()
+     out = []
+@@ -781,7 +910,25 @@ def report(text, target="<pointer>", results=None, nbytes=None):
+     out.extend(cov_lines)
+     out.append(f"  => {'PASS' if cov_ok else 'FAIL'}")
+     out.append("")
+-    overall = checks_ok and cov_ok
++    xdoc_ok = True
++    if xdoc is not None:
++        xresults, xskipped = xdoc
++        xcov_ok, xcov_lines = coverage_tripwire(manifest=XDOC_CLAUSES, checks=XDOC_CHECKS)
++        out.append("CROSS-DOC CHECKS (869dtn48p — supplied-input family):")
++        for xid in sorted(xresults):
++            ok, label, detail = xresults[xid]
++            if not ok:
++                xdoc_ok = False
++            out.append(f"  [{'PASS' if ok else 'FAIL'}] {xid} {label}")
++            out.append(f"         -> {detail}")
++        for note in xskipped:
++            out.append(f"  [note] {note}")
++        out.append("XDOC COVERAGE (family clauses):")
++        out.extend(xcov_lines)
++        out.append(f"  => {'PASS' if xcov_ok else 'FAIL'}")
++        out.append("")
++        xdoc_ok = xdoc_ok and xcov_ok
++    overall = checks_ok and cov_ok and xdoc_ok
+     out.append(f"RESULT: {'PASS (exit 0)' if overall else 'FAIL (exit 1)'}")
+     return "\n".join(out), (0 if overall else 1)
+ 
+@@ -805,7 +952,7 @@ def _failed_set(results):
+ 
+ 
+ def selftest(emit_dir=None):
+-    from test_layer1_lint import FIXTURES        # external fixtures (§3.1)
++    from test_layer1_lint import FIXTURES, XDOC_FIXTURES   # external fixtures (§3.1 + 869dtn48p)
+     clean_text = _load_baseline()                # sha1-pinned frozen baseline (was FROZEN_BASELINE)
+     print(f"SELF-TEST (HERMETIC — sha1-pinned baseline.md, v3.7 / etag-16 snapshot)")
+     print(f"  baseline bytes: {len(clean_text.encode('utf-8'))}")
+@@ -822,7 +969,8 @@ def selftest(emit_dir=None):
+                 print(f"           BASELINE FAIL {cid}: {detail}")
+ 
+     passed = 0
+-    total = len(FIXTURES) + 2            # + the tripwire fixture + the manifest tier-schema fixture
++    # pointer fixtures + tripwire + tier-schema + xdoc fixtures + xdoc tripwire
++    total = len(FIXTURES) + 2 + len(XDOC_FIXTURES) + 1
+     print()
+     for fid, desc, mutate, expected in FIXTURES:
+         try:
+@@ -869,12 +1017,56 @@ def selftest(emit_dir=None):
+     print(f"           expected accept 3/3 + reject 4/4 -> "
+           f"accepted={'3/3' if tier_accept else 'BAD'}, rejected={tier_reject}/4")
+ 
++    # 869dtn48p XDOC family fixtures (synthetic sovereign-doc copies; exact failing-set match,
++    # same contract as the pointer fixtures above).
++    print()
++    for fid, desc, build, expected in XDOC_FIXTURES:
++        try:
++            ptr, docs, shas = build(clean_text)
++            xres, _skip = run_xdoc_checks(ptr, docs, shas)
++            failed = _failed_set(xres)
++            ok = (failed == expected)
++            detail = (f"failed={sorted(failed)} == expected" if ok
++                      else f"failed={sorted(failed)} != expected={sorted(expected)}")
++        except Exception as e:
++            ok, detail = False, f"raised {type(e).__name__}: {e}"
++        if ok:
++            passed += 1
++        verb = "stay clean" if not expected else f"FAIL exactly {sorted(expected)}"
++        print(f"  [{'OK' if ok else 'BAD'}] {fid}: {desc}")
++        print(f"           expected to {verb} -> {detail}")
++    xinj = dict(XDOC_CLAUSES)
++    xinj["XL99"] = ("DELIBERATELY UNCOVERED xdoc rule", [])
++    xcov_ok, _ = coverage_tripwire(manifest=xinj, checks=XDOC_CHECKS)
++    xtrip_caught = not xcov_ok
++    if xtrip_caught:
++        passed += 1
++    print(f"  [{'OK' if xtrip_caught else 'BAD'}] FXXCOV-uncovered-xdoc-rule: an xdoc clause with no mapped check")
++    print(f"           expected xdoc coverage tripwire to FAIL -> {'fired' if xtrip_caught else 'did NOT fire'}")
++
+     all_ok = base_clean and (passed == total)
+     print(f"\nSELF-TEST RESULT: {passed}/{total} fixtures correct (exact failing-set match); "
+           f"baseline {'clean' if base_clean else 'BROKEN'} -> {'PASS' if all_ok else 'FAIL'}")
+     return 0 if all_ok else 1
+ 
+ 
++def _parse_named_values(pairs, what, allowed):
++    """869dtn48p CLI plumbing: parse repeatable NAME=VALUE args into a dict, strictly —
++    malformed / unknown-name / duplicate entries raise ValueError (surfaced as a CLI-usage
++    error, argparse exit 2)."""
++    out = {}
++    for spec in pairs or []:
++        name, sep, val = spec.partition("=")
++        if not sep or not name or not val:
++            raise ValueError(f"{what} expects NAME=VALUE, got {spec!r}")
++        if name not in allowed:
++            raise ValueError(f"{what} name {name!r} not one of {sorted(allowed)}")
++        if name in out:
++            raise ValueError(f"duplicate {what} for {name!r}")
++        out[name] = val
++    return out
++
++
+ # ============================================================================
+ def main(argv=None):
+     p = argparse.ArgumentParser(description="Layer 1 adaptive doc-linter (offline/deterministic)")
+@@ -882,8 +1074,28 @@ def main(argv=None):
+     p.add_argument("--selftest", action="store_true", help="run the hermetic known-bad fixtures")
+     p.add_argument("--emit-fixtures", metavar="DIR", help="write known-bad variants (from baseline.md) to DIR")
+     p.add_argument("--json", action="store_true", help="emit the ClickUp action-items feed (STEP 4)")
++    p.add_argument("--doc", action="append", metavar="NAME=PATH",
++                   help="869dtn48p: sovereign-doc copy to cross-check (NAME: gate_v|rules|tag_use|charter; repeatable)")
++    p.add_argument("--live-sha", action="append", metavar="NAME=SHA1", dest="live_sha",
++                   help="869dtn48p: live server-side sha1 for NAME (connected-seat input; repeatable)")
+     args = p.parse_args(argv)
+ 
++    # 869dtn48p: strict parse of the cross-doc inputs; doc files are read as RAW BYTES (sha1-exact
++    # for gate_v; X01 decodes utf-8/replace for ID harvest). Unreadable file = CLI-usage error.
++    try:
++        doc_paths = _parse_named_values(args.doc, "--doc", XDOC_DOC_NAMES)
++        live_shas = _parse_named_values(args.live_sha, "--live-sha", XDOC_DOC_NAMES)
++    except ValueError as e:
++        p.error(str(e))
++    docs = {}
++    for name, path in doc_paths.items():
++        try:
++            with open(path, "rb") as fh:
++                docs[name] = fh.read()
++        except OSError as e:
++            p.error(f"--doc {name}: cannot read {path!r}: {type(e).__name__}: {e}")
++    xdoc_active = bool(docs) or bool(live_shas)
++
+     # baseline-dependent modes may hit a lazy init-failure -> clean exit 3 (F2), never a traceback.
+     try:
+         if args.selftest:
+@@ -914,21 +1126,25 @@ def main(argv=None):
+         # precomputed C00 result so the output format is identical to any other C00 FAIL.
+         c00 = {"C00": (False, CHECKS["C00"][0],
+                        f"structural parse failed: {type(e).__name__}: {e}")}
++        xdoc = (({"X00": (False, XDOC_CHECKS["X00"],
++                          f"pointer parse failed: {type(e).__name__}: {e}")}, [])
++                if xdoc_active else None)
+         if args.json:
+-            feed = action_items(None, results=c00)
++            feed = action_items(None, results=c00, xdoc=xdoc)
+             print(json.dumps(feed, indent=2))
+             return feed["exit"]
+         rpt, code = report(None, target=args.pointer, results=c00,
+-                           nbytes=os.path.getsize(args.pointer))
++                           nbytes=os.path.getsize(args.pointer), xdoc=xdoc)
+         print(rpt)
+         return code
+ 
++    xdoc = run_xdoc_checks(text, docs, live_shas) if xdoc_active else None
+     if args.json:
+-        feed = action_items(text)
++        feed = action_items(text, xdoc=xdoc)
+         print(json.dumps(feed, indent=2))
+         return feed["exit"]
+ 
+-    rpt, code = report(text, target=args.pointer)
++    rpt, code = report(text, target=args.pointer, xdoc=xdoc)
+     print(rpt)
+     return code
+ 
+diff --git a/test_layer1_lint.py b/test_layer1_lint.py
+index f0941b3..b5c2a50 100644
+--- a/test_layer1_lint.py
++++ b/test_layer1_lint.py
+@@ -208,6 +208,66 @@ FIXTURES = [
+ ]
+ 
+ 
++# ============================================================================
++# 869dtn48p XDOC fixtures — hermetic synthetic sovereign-doc copies, built against the
++# sha1-pinned baseline. Each entry: (fid, desc, build(base) -> (pointer_text, docs, live_shas),
++# expected_failing_set); --selftest runs each through layer1_lint.run_xdoc_checks and asserts
++# the EXACT failing-set, mirroring the pointer FIXTURES contract.
++# ============================================================================
++_GATEV_PIN = "d6d54ae7d1d632f54e7f122efa3a1ccae7269860"
++
++
++def _xdoc_docs():
++    """Synthetic Rules / Tag Use / charter copies citing ONLY IDs the v4.4 baseline data block
++    holds (Rules also cites the contextual workspace id — exercising the C02-parity exemption)."""
++    rules = ("# Cowork Layer 1 — Rules (synthetic fixture copy)\n"
++             "Own zone Box `390802629329`; drop-zones `977588333` + `86746916736`.\n"
++             "Audit list `901218891519`; battery `901218930653`; "
++             "ClickUp spaces are owned by workspace 20433935.\n")
++    tag_use = ("# Cowork Layer 1 — Tag Use (synthetic fixture copy)\n"
++               "Tags are space-scoped: `90128004233`. Source taxonomy TTR `2165172587661`.\n")
++    charter = ("# Project charter (synthetic fixture copy)\n"
++               "S4 locators: lists `901218919999`, `901218930653`, `901218891519`.\n"
++               "Docs: GATE-V `2289594143154`, Rules `2289598235660`, Tag Use `2289594294545`.\n"
++               "Field `6a703bf5-1ba3-42de-b8f9-11ca5ea41e79`.\n")
++    return {"rules": rules, "tag_use": tag_use, "charter": charter}
++
++
++XDOC_FIXTURES = [
++    ("XF01-clean-set", "synthetic Rules/TagUse/charter cite only pointer-held IDs; live sha == pin",
++     lambda base: (base, _xdoc_docs(), {"gate_v": _GATEV_PIN}), frozenset()),
++    ("XF02-rules-alien-id", "Rules copy cites a Box ID absent from the pointer data block",
++     lambda base: (base, dict(_xdoc_docs(), rules=_xdoc_docs()["rules"] + "Stray Box `999888777666`.\n"),
++                   {}), frozenset({"X01"})),
++    ("XF03-charter-alien-uuid", "charter copy cites a field UUID the pointer does not hold",
++     lambda base: (base, dict(_xdoc_docs(), charter=_xdoc_docs()["charter"]
++                              + "Field `deadbeef-dead-dead-dead-deadbeefdead`.\n"),
++                   {}), frozenset({"X01"})),
++    ("XF04-pin-drift-pointer-vs-manifest",
++     "pointer gate_v.sha1_pin re-pinned away from the manifest record; supplied live sha still == "
++     "manifest pin, so BOTH halves of the coherence check fire (X02 record drift + X03 live mismatch)",
++     lambda base: (_sub(base, 'sha1_pin: "d6d54ae7d1d632f54e7f122efa3a1ccae7269860"',
++                              'sha1_pin: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"', "XF04"),
++                   {}, {"gate_v": _GATEV_PIN}), frozenset({"X02", "X03"})),
++    ("XF05-version-drift", "pointer gate_v.version_expected bumped without a manifest re-record",
++     lambda base: (_sub(base, 'version_expected: "v3.1"', 'version_expected: "v3.2"', "XF05"),
++                   {}, {}), frozenset({"X02"})),
++    ("XF06-live-sha-mismatch", "supplied live GATE-V sha1 differs from the consistent pin (drift/tamper)",
++     lambda base: (base, {}, {"gate_v": "beefbeefbeefbeefbeefbeefbeefbeefbeefbeef"}),
++     frozenset({"X03"})),
++    ("XF07-gatev-copy-sha-mismatch", "supplied gate_v doc copy whose sha1 != pin (byte-drifted copy)",
++     lambda base: (base, {"gate_v": "# GATE-V synthetic copy (drifted bytes)\n"}, {}),
++     frozenset({"X03"})),
++    ("XF08-malformed-live-sha", "supplied live sha1 is not 40-hex",
++     lambda base: (base, {}, {"gate_v": "deadbeef"}), frozenset({"X03"})),
++    ("XF09-broken-pointer", "xdoc run against an unparseable pointer short-circuits to X00 only",
++     lambda base: (base.replace("```yaml", "```text", 1), _xdoc_docs(), {"gate_v": _GATEV_PIN}),
++     frozenset({"X00"})),
++    ("XF10-no-inputs", "no doc/sha inputs: X00+X02 still run, X01/X03 skip with notes, nothing fails",
++     lambda base: (base, {}, {}), frozenset()),
++]
++
++
+ # ============================================================================
+ # §5 DIFFERENTIAL HARNESS
+ # ============================================================================

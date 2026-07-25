@@ -1,0 +1,502 @@
+diff --git a/layer1_lint.py b/layer1_lint.py
+index dcbeb8a..03d826b 100644
+--- a/layer1_lint.py
++++ b/layer1_lint.py
+@@ -767,18 +767,20 @@ def coverage_tripwire(manifest=CLAUSE_MANIFEST, checks=CHECKS):
+ # single-source-of-truth; supplied sovereign-doc copies are checked AGAINST it. The live
+ # server-side sha1 fetch is the connected seat's downstream step — this venue takes it as input.
+ # ============================================================================
+-XDOC_DOC_NAMES = ("gate_v", "rules", "tag_use", "charter", "org_mirror")
++XDOC_DOC_NAMES = ("gate_v", "rules", "tag_use", "charter", "org_mirror", "project_pointer")
+ XDOC_ID_DOCS = ("rules", "tag_use", "charter")       # X01 scope: docs that RESTATE pointer IDs
+ XDOC_SHA_CONSUMERS = ("gate_v", "org_mirror")        # names whose --live-sha a check consumes
+ 
+-# 869dx7xpc COVERAGE MAP (re-scoped): the linted doc universe and which family covers each slot.
++# 869dx7xpc COVERAGE MAP (re-scoped; 869dtn4e2 added the H-family slots): the linted doc
++# universe and which family covers each slot.
+ COVERAGE_MAP = (
+-    ("pointer",    "always-on core C00-C13"),
+-    ("gate_v",     "supplied-input X02/X03 (pin coherence)"),
+-    ("rules",      "supplied-input X01 (ID coherence)"),
+-    ("tag_use",    "supplied-input X01 (ID coherence)"),
+-    ("charter",    "supplied-input X01 (ID coherence)"),
+-    ("org_mirror", "supplied-input X04 (structure) + X05 (baseline-currency)"),
++    ("pointer",         "always-on core C00-C13"),
++    ("gate_v",          "supplied-input X02/X03 (pin coherence) + H02 (mutability claim)"),
++    ("rules",           "supplied-input X01 (ID coherence) + H01-H03 (static hygiene)"),
++    ("tag_use",         "supplied-input X01 (ID coherence) + H01-H03 (static hygiene)"),
++    ("charter",         "supplied-input X01 (ID coherence) + H01/H04 (static hygiene)"),
++    ("org_mirror",      "supplied-input X04 (structure) + X05 (baseline-currency)"),
++    ("project_pointer", "supplied-input H04 (no authority-bearing definitions)"),
+ )
+ 
+ # 869dx7xpc org-mirror STRUCTURAL conventions (X04) — presence-anchors only, matched case-
+@@ -942,6 +944,218 @@ def run_xdoc_checks(pointer_text, docs=None, live_shas=None, org_mirror_record=N
+     return results, skipped
+ 
+ 
++# ============================================================================
++# STATIC-DOC HYGIENE FAMILY — 869dtn4e2 (tier 1: deterministic, offline, on-demand). Runs on
++# the SAME --doc copies as the XDOC family; pure text/structure checks, no live state. The
++# editable docs can drift internally without tripping the pointer-only linter — these close that.
++# Findings cite line numbers + detector labels; doc text is never echoed beyond version strings.
++# ============================================================================
++DOCHYG_VERSION_DOCS = ("rules", "tag_use", "charter")            # H01 scope (spec a)
++DOCHYG_CLAIM_DOCS = ("rules", "tag_use", "gate_v")               # H02 scope (spec b)
++DOCHYG_CEILING_DOCS = ("rules", "tag_use")                       # H03 scope (spec c)
++DOCHYG_AUTHORITY_DOCS = ("charter", "project_pointer")           # H04 scope (spec d)
++DOCHYG_ALL_DOCS = ("rules", "tag_use", "charter", "gate_v", "project_pointer")
++
++_V_RE = re.compile(r'\bv(\d+)\.(\d+)\b')
++_CHANGELOG_SEC_RE = re.compile(r'^#{2,}[^\n]*change[- ]?log[^\n]*$', re.IGNORECASE | re.MULTILINE)
++_EDITABLE_CLAIM_RE = re.compile(r'cowork[-\s]editable', re.IGNORECASE)
++_IMMUTABLE_CLAIM_RE = re.compile(r'immutable core|sovereign-paste only|jr sovereign-paste|never edit',
++                                 re.IGNORECASE)
++# canonical precedence anchors (same vocabulary as C04's prose check)
++DOC_PREC_ANCHORS = ("safety", "failsafe", "gate-v", "never-write", "organisation", "ceiling", "rules")
++# authority-bearing DEFINITION detectors: keyword mentions alone are references (legal);
++# a definition needs an ID / a value bound to the keyword on the same line.
++_AUTH_GRANT_RE = re.compile(r'full_rw|writable|rw_operational|consent[-_\s]gated|write[-\s]access',
++                            re.IGNORECASE)
++_THRESHOLD_DEF_RE = re.compile(r'\b(single_file_kb|cumulative_session_kb|large_docs)\s*[:=]\s*\S',
++                               re.IGNORECASE)
++_NEVERWRITE_WORD_RE = re.compile(r'never[-_\s]write', re.IGNORECASE)
++
++DOCHYG_CHECKS = {
++    "H01": "header version matches the latest change-log entry (no silent bump / unlogged edit)",
++    "H02": "the doc's editable-vs-immutable self-claim agrees with the pointer's mutability lists",
++    "H03": "no ceiling-shaped allow-list re-introduced; precedence restatements in canonical order",
++    "H04": "charter / project pointer carry no authority-bearing definitions (ceiling/never-write/threshold)",
++}
++DOCHYG_CLAUSES = {
++    "HL1": ("Editable docs may not bump their header version without a matching change-log entry (and vice versa)", ["H01"]),
++    "HL2": ("A doc floored immutable may not claim Cowork-editable, nor the reverse (pointer mutability lists govern)", ["H02"]),
++    "HL3": ("Rules/Tag Use may never re-introduce a ceiling allow-list or reorder precedence (Rules S0 bar)", ["H03"]),
++    "HL4": ("Charter + project pointer are locators only — authority definitions live in the sovereign pointer", ["H04"]),
++}
++
++
++def _doc_text(docs, name):
++    t = docs.get(name)
++    if t is None:
++        return None
++    return t.decode("utf-8", "replace") if isinstance(t, bytes) else str(t)
++
++
++def _header_version(text):
++    """The vN.N on the doc's first H1 line, as an int tuple — or None."""
++    for line in text.splitlines():
++        if line.startswith("# "):
++            m = _V_RE.search(line)
++            return (int(m.group(1)), int(m.group(2))) if m else None
++    return None
++
++
++def _changelog_versions(text):
++    """All vN.N tuples inside the change-log section (## ...change log... to the next heading),
++    or None if the doc has no change-log section."""
++    m = _CHANGELOG_SEC_RE.search(text)
++    if not m:
++        return None
++    tail = text[m.end():]
++    nxt = re.search(r'^#{1,6}\s', tail, re.MULTILINE)
++    sect = tail[:nxt.start()] if nxt else tail
++    return [(int(a), int(b)) for a, b in _V_RE.findall(sect)]
++
++
++def _authority_definition_lines(text, detectors):
++    """(line_no, [detector labels]) for every line tripping any detector. Labels only — the
++    line text itself is not echoed."""
++    hits = []
++    for n, line in enumerate(text.splitlines(), 1):
++        labs = []
++        if "grant" in detectors and _AUTH_GRANT_RE.search(line) and LONGID_RE.search(line):
++            labs.append("auth-grant+id")
++        if "threshold" in detectors and _THRESHOLD_DEF_RE.search(line):
++            labs.append("threshold-def")
++        if "neverwrite" in detectors and _NEVERWRITE_WORD_RE.search(line) and LONGID_RE.search(line):
++            labs.append("neverwrite-enum")
++        if labs:
++            hits.append((n, labs))
++    return hits
++
++
++def _precedence_restatement_errs(text):
++    """Anchor-keyword sequence across the doc's NUMBERED lines must respect canonical order
++    (subsequence test). No/one anchor found = no restatement = clean."""
++    seq = []
++    for m in re.finditer(r'^\s*\d+[.)]\s*(.+)$', text, re.MULTILINE):
++        low = m.group(1).lower()
++        for i, a in enumerate(DOC_PREC_ANCHORS):
++            if a in low:
++                seq.append((i, a))
++    errs = []
++    for (i1, a1), (i2, a2) in zip(seq, seq[1:]):
++        if i2 < i1:
++            errs.append(f"precedence restatement out of canonical order: '{a2}' after '{a1}'")
++    return errs
++
++
++def run_dochygiene_checks(pointer_text, docs=None):
++    """869dtn4e2 orchestrator -> (results {hid: (ok, label, detail)}, skipped [info lines]).
++    Uses the same supplied-doc dict as the XDOC family. Per-check scopes; checks whose docs are
++    absent skip with a note. Never raises on malformed content."""
++    docs = docs or {}
++    results, skipped = {}, []
++
++    # ---- H01: version <-> change-log (per supplied doc; max change-log version must equal
++    # the header version — order-independent, so entry ordering conventions don't matter).
++    sup = [n for n in DOCHYG_VERSION_DOCS if n in docs]
++    if sup:
++        errs, notes = [], []
++        for name in sup:
++            text = _doc_text(docs, name)
++            hv = _header_version(text)
++            cv = _changelog_versions(text)
++            if hv is None:
++                errs.append(f"{name}: no vN.N on the H1 header line (unversioned doc)")
++                continue
++            if cv is None:
++                errs.append(f"{name}: no change-log section found (unlogged history)")
++                continue
++            if not cv:
++                errs.append(f"{name}: change-log section has no vN.N entries")
++                continue
++            top = max(cv)
++            if top != hv:
++                errs.append(f"{name}: header v{hv[0]}.{hv[1]} != latest change-log v{top[0]}.{top[1]} "
++                            f"(silent bump or unlogged edit)")
++            else:
++                notes.append(f"{name}=v{hv[0]}.{hv[1]}")
++        results["H01"] = (not errs, DOCHYG_CHECKS["H01"],
++                          "; ".join(errs) if errs else f"header == latest change-log [{'; '.join(notes)}]")
++    else:
++        skipped.append("H01 not run: no rules/tag_use/charter copy supplied")
++
++    # ---- H02: editable/immutable self-claim vs the pointer's mutability lists.
++    sup = [n for n in DOCHYG_CLAIM_DOCS if n in docs]
++    if sup:
++        try:
++            yaml_text, _p = split_doc(pointer_text)
++            data = load_data(yaml_text)
++            mut = data.get("mutability", {}) if isinstance(data.get("mutability"), dict) else {}
++            imm = set(mut.get("immutable_jr_paste_only", []) or [])
++            edt = set(mut.get("cowork_editable_howto_only", []) or [])
++            errs, notes = [], []
++            for name in sup:
++                text = _doc_text(docs, name)
++                claims_e = bool(_EDITABLE_CLAIM_RE.search(text))
++                claims_i = bool(_IMMUTABLE_CLAIM_RE.search(text))
++                if claims_e and claims_i:
++                    errs.append(f"{name}: claims BOTH Cowork-editable and immutable (ambiguous)")
++                elif not claims_e and not claims_i:
++                    notes.append(f"{name}: no self-claim found (nothing to cross-check)")
++                elif claims_e and name in imm:
++                    errs.append(f"{name}: claims Cowork-editable but the pointer floors it immutable")
++                elif claims_i and name in edt:
++                    errs.append(f"{name}: claims immutable but the pointer lists it Cowork-editable")
++                elif claims_e and name not in edt:
++                    errs.append(f"{name}: claims Cowork-editable but is not on the pointer's editable list")
++                else:
++                    notes.append(f"{name}: claim consistent")
++            for n_ in notes:
++                if "no self-claim" in n_:
++                    skipped.append(f"H02 note: {n_}")
++            results["H02"] = (not errs, DOCHYG_CHECKS["H02"],
++                              "; ".join(errs) if errs
++                              else "; ".join(n_ for n_ in notes if "consistent" in n_) or
++                                   "no cross-checkable self-claims")
++        except Exception as e:
++            results["H02"] = (False, DOCHYG_CHECKS["H02"],
++                              f"cannot verify: pointer parse failed ({type(e).__name__}: {e})")
++    else:
++        skipped.append("H02 not run: no rules/tag_use/gate_v copy supplied")
++
++    # ---- H03: ceiling re-introduction + precedence restatement order (Rules/Tag Use).
++    sup = [n for n in DOCHYG_CEILING_DOCS if n in docs]
++    if sup:
++        errs = []
++        for name in sup:
++            text = _doc_text(docs, name)
++            for n_, labs in _authority_definition_lines(text, ("grant",)):
++                errs.append(f"{name} line {n_}: ceiling-shaped allow-list content {labs} "
++                            f"(Rules S0 forbids re-introducing one)")
++            for e_ in _precedence_restatement_errs(text):
++                errs.append(f"{name}: {e_}")
++        results["H03"] = (not errs, DOCHYG_CHECKS["H03"],
++                          "; ".join(errs) if errs
++                          else f"no ceiling re-introduction; precedence restatements canonical "
++                               f"[{', '.join(sup)}]")
++    else:
++        skipped.append("H03 not run: no rules/tag_use copy supplied")
++
++    # ---- H04: authority-bearing DEFINITIONS in charter / project pointer.
++    sup = [n for n in DOCHYG_AUTHORITY_DOCS if n in docs]
++    if sup:
++        errs = []
++        for name in sup:
++            text = _doc_text(docs, name)
++            for n_, labs in _authority_definition_lines(text, ("grant", "threshold", "neverwrite")):
++                errs.append(f"{name} line {n_}: authority-bearing definition {labs} "
++                            f"(authority lives in the sovereign pointer only)")
++        results["H04"] = (not errs, DOCHYG_CHECKS["H04"],
++                          "; ".join(errs) if errs
++                          else f"no authority-bearing definitions [{', '.join(sup)}]")
++    else:
++        skipped.append("H04 not run: no charter/project_pointer copy supplied")
++    return results, skipped
++
++
+ # ============================================================================
+ # CLICKUP HYGIENE CHECK FAMILY — 869dwncba (recommend-only: surfaces, never auto-mutates).
+ # These checks read LIVE ClickUp in production; this venue has no connector, so they are engine
+@@ -1087,7 +1301,7 @@ def run_checks(text):
+     return results
+ 
+ 
+-def action_items(text, results=None, xdoc=None, hyg=None):
++def action_items(text, results=None, xdoc=None, hyg=None, dochyg=None):
+     """STEP 4 feed (issue-tracker pattern). Returns the list of human-action items
+     keyed by a STABLE finding-id, for an idempotent ClickUp upsert by the seat.
+     Clean run -> [] (no tasks for clean runs). The linter does NOT write ClickUp
+@@ -1141,7 +1355,23 @@ def action_items(text, results=None, xdoc=None, hyg=None):
+                     items.append({"finding_id": "L1LINT-HYG-COVERAGE", "kind": "uncovered_rule",
+                                   "summary": "hygiene coverage tripwire fired", "detail": ln.strip()})
+         hyg_ok = all(r[0] for r in hresults.values()) and hcov_ok
+-    overall = all(r[0] for r in results.values()) and cov_ok and xdoc_ok and hyg_ok
++    dochyg_ok = True
++    if dochyg is not None:
++        dresults, _dskipped = dochyg
++        dcov_ok, dcov_lines = coverage_tripwire(manifest=DOCHYG_CLAUSES, checks=DOCHYG_CHECKS)
++        for hid in sorted(dresults):
++            ok, label, detail = dresults[hid]
++            if not ok:
++                items.append({"finding_id": f"L1LINT-{hid}", "kind": "inconsistency",
++                              "check": hid, "summary": label, "detail": detail})
++        if not dcov_ok:
++            for ln in dcov_lines:
++                if "UNCOVERED" in ln or "ORPHAN" in ln:
++                    items.append({"finding_id": "L1LINT-DOCHYG-COVERAGE", "kind": "uncovered_rule",
++                                  "summary": "doc-hygiene coverage tripwire fired", "detail": ln.strip()})
++        dochyg_ok = all(r[0] for r in dresults.values()) and dcov_ok
++    overall = (all(r[0] for r in results.values()) and cov_ok and xdoc_ok and hyg_ok
++               and dochyg_ok)
+     return {"result": "PASS" if overall else "FAIL",
+             "exit": 0 if overall else 1,
+             "action_items": items,          # -> ClickUp tasks (idempotent by finding_id)
+@@ -1151,12 +1381,13 @@ def action_items(text, results=None, xdoc=None, hyg=None):
+             "proposed_checks": []}
+ 
+ 
+-def report(text, target="<pointer>", results=None, nbytes=None, xdoc=None, hyg=None):
++def report(text, target="<pointer>", results=None, nbytes=None, xdoc=None, hyg=None, dochyg=None):
+     # `results`/`nbytes` default None -> identical to the normal path; the Phase-B read-error
+     # path passes a precomputed C00 result + the raw byte count (text is unavailable then).
+     # `xdoc` (869dtn48p) default None -> byte-identical default report; when supplied it is the
+     # (xdoc_results, skipped) pair and a CROSS-DOC section is appended before RESULT.
+     # `hyg` (869dwncba) same pattern: the recommend-only CLICKUP HYGIENE section.
++    # `dochyg` (869dtn4e2) same pattern: the STATIC-DOC HYGIENE section.
+     results = run_checks(text) if results is None else results
+     cov_ok, cov_lines = coverage_tripwire()
+     out = []
+@@ -1216,7 +1447,25 @@ def report(text, target="<pointer>", results=None, nbytes=None, xdoc=None, hyg=N
+         out.append(f"  => {'PASS' if hcov_ok else 'FAIL'}")
+         out.append("")
+         hyg_ok = hyg_ok and hcov_ok
+-    overall = checks_ok and cov_ok and xdoc_ok and hyg_ok
++    dochyg_ok = True
++    if dochyg is not None:
++        dresults, dskipped = dochyg
++        dcov_ok, dcov_lines = coverage_tripwire(manifest=DOCHYG_CLAUSES, checks=DOCHYG_CHECKS)
++        out.append("STATIC-DOC HYGIENE CHECKS (869dtn4e2 — tier-1 offline, supplied docs):")
++        for hid in sorted(dresults):
++            ok, label, detail = dresults[hid]
++            if not ok:
++                dochyg_ok = False
++            out.append(f"  [{'PASS' if ok else 'FAIL'}] {hid} {label}")
++            out.append(f"         -> {detail}")
++        for note in dskipped:
++            out.append(f"  [note] {note}")
++        out.append("DOC-HYGIENE COVERAGE (family clauses):")
++        out.extend(dcov_lines)
++        out.append(f"  => {'PASS' if dcov_ok else 'FAIL'}")
++        out.append("")
++        dochyg_ok = dochyg_ok and dcov_ok
++    overall = checks_ok and cov_ok and xdoc_ok and hyg_ok and dochyg_ok
+     out.append(f"RESULT: {'PASS (exit 0)' if overall else 'FAIL (exit 1)'}")
+     return "\n".join(out), (0 if overall else 1)
+ 
+@@ -1240,8 +1489,9 @@ def _failed_set(results):
+ 
+ 
+ def selftest(emit_dir=None):
+-    # external fixtures (§3.1 + 869dtn48p + 869dx7xpc + 869dwncba)
+-    from test_layer1_lint import FIXTURES, XDOC_FIXTURES, XDOC_FIXTURES2, HYG_FIXTURES
++    # external fixtures (§3.1 + 869dtn48p + 869dx7xpc + 869dwncba + 869dtn4e2)
++    from test_layer1_lint import (FIXTURES, XDOC_FIXTURES, XDOC_FIXTURES2, HYG_FIXTURES,
++                                  DH_FIXTURES)
+     clean_text = _load_baseline()                # sha1-pinned frozen baseline (was FROZEN_BASELINE)
+     print(f"SELF-TEST (HERMETIC — sha1-pinned baseline.md, v3.7 / etag-16 snapshot)")
+     print(f"  baseline bytes: {len(clean_text.encode('utf-8'))}")
+@@ -1260,8 +1510,9 @@ def selftest(emit_dir=None):
+     passed = 0
+     # pointer fixtures + tripwire + tier-schema + xdoc fixtures (both tables) + xdoc tripwire
+     # + the org-mirror confidentiality fixture + hygiene fixtures + hygiene tripwire
++    # + doc-hygiene fixtures + doc-hygiene tripwire
+     total = (len(FIXTURES) + 2 + len(XDOC_FIXTURES) + len(XDOC_FIXTURES2) + 1 + 1
+-             + len(HYG_FIXTURES) + 1)
++             + len(HYG_FIXTURES) + 1 + len(DH_FIXTURES) + 1)
+     print()
+     for fid, desc, mutate, expected in FIXTURES:
+         try:
+@@ -1381,6 +1632,33 @@ def selftest(emit_dir=None):
+     print(f"  [{'OK' if htrip_caught else 'BAD'}] FXHCOV-uncovered-hygiene-rule: a hygiene clause with no mapped check")
+     print(f"           expected hygiene coverage tripwire to FAIL -> {'fired' if htrip_caught else 'did NOT fire'}")
+ 
++    # 869dtn4e2 static-doc hygiene fixtures (synthetic doc copies through run_dochygiene_checks;
++    # exact failing-set contract).
++    print()
++    for fid, desc, build, expected in DH_FIXTURES:
++        try:
++            ptr, docs = build(clean_text)
++            dres, _skip = run_dochygiene_checks(ptr, docs)
++            failed = _failed_set(dres)
++            ok = (failed == expected)
++            detail = (f"failed={sorted(failed)} == expected" if ok
++                      else f"failed={sorted(failed)} != expected={sorted(expected)}")
++        except Exception as e:
++            ok, detail = False, f"raised {type(e).__name__}: {e}"
++        if ok:
++            passed += 1
++        verb = "stay clean" if not expected else f"FAIL exactly {sorted(expected)}"
++        print(f"  [{'OK' if ok else 'BAD'}] {fid}: {desc}")
++        print(f"           expected to {verb} -> {detail}")
++    dinj = dict(DOCHYG_CLAUSES)
++    dinj["HL99"] = ("DELIBERATELY UNCOVERED doc-hygiene rule", [])
++    dcov_ok, _ = coverage_tripwire(manifest=dinj, checks=DOCHYG_CHECKS)
++    dtrip_caught = not dcov_ok
++    if dtrip_caught:
++        passed += 1
++    print(f"  [{'OK' if dtrip_caught else 'BAD'}] FXDCOV-uncovered-dochygiene-rule: a doc-hygiene clause with no mapped check")
++    print(f"           expected doc-hygiene coverage tripwire to FAIL -> {'fired' if dtrip_caught else 'did NOT fire'}")
++
+     all_ok = base_clean and (passed == total)
+     print(f"\nSELF-TEST RESULT: {passed}/{total} fixtures correct (exact failing-set match); "
+           f"baseline {'clean' if base_clean else 'BROKEN'} -> {'PASS' if all_ok else 'FAIL'}")
+@@ -1450,6 +1728,7 @@ def main(argv=None):
+         except OSError as e:
+             p.error(f"--{label}-dump: cannot read {path!r}: {type(e).__name__}: {e}")
+     hyg_active = dumps["comments"] is not None or dumps["audit"] is not None
++    dochyg_active = any(n in docs for n in DOCHYG_ALL_DOCS)   # 869dtn4e2: same --doc inputs
+ 
+     # baseline-dependent modes may hit a lazy init-failure -> clean exit 3 (F2), never a traceback.
+     try:
+@@ -1486,23 +1765,27 @@ def main(argv=None):
+                 if xdoc_active else None)
+         hyg = (run_hygiene_checks(dumps["comments"], dumps["audit"])
+                if hyg_active else None)             # hygiene needs no pointer text — still runs
++        dochyg = (run_dochygiene_checks(None, docs)
++                  if dochyg_active else None)       # doc-local checks run; H02 fails closed
+         if args.json:
+-            feed = action_items(None, results=c00, xdoc=xdoc, hyg=hyg)
++            feed = action_items(None, results=c00, xdoc=xdoc, hyg=hyg, dochyg=dochyg)
+             print(json.dumps(feed, indent=2))
+             return feed["exit"]
+         rpt, code = report(None, target=args.pointer, results=c00,
+-                           nbytes=os.path.getsize(args.pointer), xdoc=xdoc, hyg=hyg)
++                           nbytes=os.path.getsize(args.pointer), xdoc=xdoc, hyg=hyg,
++                           dochyg=dochyg)
+         print(rpt)
+         return code
+ 
+     xdoc = run_xdoc_checks(text, docs, live_shas) if xdoc_active else None
+     hyg = run_hygiene_checks(dumps["comments"], dumps["audit"]) if hyg_active else None
++    dochyg = run_dochygiene_checks(text, docs) if dochyg_active else None
+     if args.json:
+-        feed = action_items(text, xdoc=xdoc, hyg=hyg)
++        feed = action_items(text, xdoc=xdoc, hyg=hyg, dochyg=dochyg)
+         print(json.dumps(feed, indent=2))
+         return feed["exit"]
+ 
+-    rpt, code = report(text, target=args.pointer, xdoc=xdoc, hyg=hyg)
++    rpt, code = report(text, target=args.pointer, xdoc=xdoc, hyg=hyg, dochyg=dochyg)
+     print(rpt)
+     return code
+ 
+diff --git a/test_layer1_lint.py b/test_layer1_lint.py
+index 89283a7..4fffbbc 100644
+--- a/test_layer1_lint.py
++++ b/test_layer1_lint.py
+@@ -324,6 +324,72 @@ XDOC_FIXTURES2 = [
+ ]
+ 
+ 
++# ============================================================================
++# 869dtn4e2 STATIC-DOC HYGIENE fixtures — (fid, desc, build(base) -> (pointer_text, docs),
++# expected_failing_set) run through layer1_lint.run_dochygiene_checks.
++# ============================================================================
++def _dh_docs():
++    """Hygiene-clean synthetic docs: versioned headers + change-logs + correct S0 self-claims,
++    no ceiling re-introduction, canonical precedence restatement, locator-only charter."""
++    rules = ("# Cowork Layer 1 — Rules — v2.3\n"
++             "Cowork-editable operational how-to only.\n"
++             "Precedence reminder (restated, canonical order):\n"
++             "1. Anthropic safety gates\n2. Failsafe lockdown\n3. GATE-V verification\n"
++             "## Change log\n- v2.3 (2026-07-20): tightened wording\n- v2.2 (2026-07-01): split\n")
++    tag_use = ("# Cowork Layer 1 — Tag Use — v1.4\nCowork-editable.\n"
++               "## Change log\n- v1.4: staging note\n- v1.3: initial\n")
++    charter = ("# Project charter — v1.0\n"
++               "AUTHORITY comes from the sovereign ceilings, not this charter (locator only).\n"
++               "## Change log\n- v1.0: created\n")
++    return {"rules": rules, "tag_use": tag_use, "charter": charter}
++
++
++DH_FIXTURES = [
++    ("DH01-clean-set", "versioned+logged docs, correct claims, no re-introduced authority",
++     lambda base: (base, _dh_docs()), frozenset()),
++    ("DH02-silent-bump", "rules header bumped v2.3->v2.4 with no matching change-log entry",
++     lambda base: (base, dict(_dh_docs(), rules=_dh_docs()["rules"].replace(
++         "Rules — v2.3", "Rules — v2.4", 1))), frozenset({"H01"})),
++    ("DH03-no-changelog", "tag_use with its change-log section renamed away",
++     lambda base: (base, dict(_dh_docs(), tag_use=_dh_docs()["tag_use"].replace(
++         "## Change log", "## History notes", 1))), frozenset({"H01"})),
++    ("DH04-editable-claims-immutable", "rules claiming immutable while the pointer lists it editable",
++     lambda base: (base, dict(_dh_docs(), rules=_dh_docs()["rules"].replace(
++         "Cowork-editable operational how-to only.",
++         "IMMUTABLE CORE — never edit. Operational how-to only.", 1))), frozenset({"H02"})),
++    ("DH05-gatev-claims-editable", "a gate_v copy claiming Cowork-editable (floored immutable)",
++     lambda base: (base, dict(_dh_docs(),
++                              gate_v="# GATE-V — Document Verification — v3.1\nCowork-editable.\n")),
++     frozenset({"H02"})),
++    ("DH06-ceiling-reintro", "rules re-introducing a ceiling-shaped allow-list (id + auth grant)",
++     lambda base: (base, dict(_dh_docs(), rules=_dh_docs()["rules"] +
++                              'Writable zone: Box `390802629329` full_rw + subfolders.\n')),
++     frozenset({"H03"})),
++    ("DH07-precedence-scrambled", "rules restating precedence with failsafe BEFORE safety",
++     lambda base: (base, dict(_dh_docs(), rules=_dh_docs()["rules"].replace(
++         "1. Anthropic safety gates\n2. Failsafe lockdown\n",
++         "1. Failsafe lockdown\n2. Anthropic safety gates\n", 1))), frozenset({"H03"})),
++    ("DH08-charter-threshold-def", "charter defining a context threshold value",
++     lambda base: (base, dict(_dh_docs(), charter=_dh_docs()["charter"] +
++                              "single_file_kb: 50\n")), frozenset({"H04"})),
++    ("DH09-charter-neverwrite-enum", "charter enumerating a never-write id",
++     lambda base: (base, dict(_dh_docs(), charter=_dh_docs()["charter"] +
++                              "never-write: `385430558352` (root of trust)\n")), frozenset({"H04"})),
++    ("DH10-project-pointer-grant", "project pointer carrying an id + auth-grant line",
++     lambda base: (base, dict(_dh_docs(),
++                              project_pointer="# Project pointer — v0.1\n"
++                                              "workspace `901218919999` writable for this project\n")),
++     frozenset({"H04"})),
++    ("DH11-reference-not-definition", "charter MENTIONING ceiling/never-write words without ids/values stays clean",
++     lambda base: (base, {"charter": "# Project charter — v1.1\n"
++                                     "Ceilings and the never-write list live in the sovereign pointer.\n"
++                                     "## Change log\n- v1.1: wording\n- v1.0: created\n"}),
++     frozenset()),
++    ("DH12-no-docs", "no hygiene-scoped docs supplied: all four checks skip with notes",
++     lambda base: (base, {}), frozenset()),
++]
++
++
+ # ============================================================================
+ # 869dwncba HYGIENE fixtures — (fid, desc, comments_dump, audit_dump, expected_failing_set).
+ # Dumps are JSON STRINGS (exercising the engine's own parse path) run through

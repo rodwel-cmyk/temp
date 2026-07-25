@@ -1,0 +1,282 @@
+diff --git a/layer1_lint.py b/layer1_lint.py
+index f87f4e3..5e89a54 100644
+--- a/layer1_lint.py
++++ b/layer1_lint.py
+@@ -109,6 +109,22 @@ def _validate_tier(tier):
+     return tier
+ 
+ 
++def _validate_org_mirror_record(rec):
++    """869dx7xpc: the manifest's OPTIONAL org_mirror record — {id: <digits>, sha1_recorded:
++    <40-hex>} — validated when present (None = mirror not yet ratified, machinery dormant).
++    Raises InitError on a malformed record (fail-closed at re-pin, like the tier field)."""
++    if rec is None:
++        return None
++    if not isinstance(rec, dict):
++        raise InitError(f"manifest org_mirror is {type(rec).__name__}, not a mapping")
++    mid, sha = rec.get("id"), rec.get("sha1_recorded")
++    if not (isinstance(mid, str) and mid.isdigit()):
++        raise InitError(f"manifest org_mirror.id {mid!r} is not a digit-string Box id")
++    if not (isinstance(sha, str) and SHA1_RE.fullmatch(sha)):
++        raise InitError(f"manifest org_mirror.sha1_recorded {sha!r} is not 40-hex")
++    return rec
++
++
+ def _load_manifest():
+     """Load + sha1-verify manifest.yaml and PROJECT it (F5) into the exact native primitives
+     C00-C13 expect: REQUIRED_NEVERWRITE_IDS / REQUIRED_DROPZONE_IDS as flat sets of id-STRINGS,
+@@ -135,7 +151,8 @@ def _load_manifest():
+             raise InitError(f"manifest {name} did not project to id/name-strings "
+                             f"(non-str element would corrupt set-math)")
+     tier = _validate_tier(m.get("tier"))
+-    return nw, dz, prec, pin, pin_ver, tier
++    mirror = _validate_org_mirror_record(m.get("org_mirror"))   # 869dx7xpc: optional, None today
++    return nw, dz, prec, pin, pin_ver, tier, mirror
+ 
+ 
+ def _load_baseline():
+@@ -148,7 +165,7 @@ def _load_baseline():
+ # (only the selftest/emit paths need it), so a baseline fault does not block a normal lint run.
+ try:
+     (REQUIRED_NEVERWRITE_IDS, REQUIRED_DROPZONE_IDS, CANONICAL_PRECEDENCE, GATE_V_PIN,
+-     GATE_V_VERSION_EXPECTED, MANIFEST_TIER) = _load_manifest()
++     GATE_V_VERSION_EXPECTED, MANIFEST_TIER, ORG_MIRROR_RECORD) = _load_manifest()
+ except InitError as _e:
+     sys.stderr.write(f"INIT-FAILURE: {_e}\n")
+     sys.exit(INIT_EXIT)
+@@ -705,27 +722,54 @@ def coverage_tripwire(manifest=CLAUSE_MANIFEST, checks=CHECKS):
+ # single-source-of-truth; supplied sovereign-doc copies are checked AGAINST it. The live
+ # server-side sha1 fetch is the connected seat's downstream step — this venue takes it as input.
+ # ============================================================================
+-XDOC_DOC_NAMES = ("gate_v", "rules", "tag_use", "charter")
++XDOC_DOC_NAMES = ("gate_v", "rules", "tag_use", "charter", "org_mirror")
+ XDOC_ID_DOCS = ("rules", "tag_use", "charter")       # X01 scope: docs that RESTATE pointer IDs
++XDOC_SHA_CONSUMERS = ("gate_v", "org_mirror")        # names whose --live-sha a check consumes
++
++# 869dx7xpc COVERAGE MAP (re-scoped): the linted doc universe and which family covers each slot.
++COVERAGE_MAP = (
++    ("pointer",    "always-on core C00-C13"),
++    ("gate_v",     "supplied-input X02/X03 (pin coherence)"),
++    ("rules",      "supplied-input X01 (ID coherence)"),
++    ("tag_use",    "supplied-input X01 (ID coherence)"),
++    ("charter",    "supplied-input X01 (ID coherence)"),
++    ("org_mirror", "supplied-input X04 (structure) + X05 (baseline-currency)"),
++)
++
++# 869dx7xpc org-mirror STRUCTURAL conventions (X04) — presence-anchors only, matched case-
++# insensitively; details report anchor LABELS + byte counts, NEVER mirror content
++# (confidentiality: the linter validates STRUCTURE + sha1 only). Conservative default set —
++# ratify/tighten when the real mirror lands (flagged in the item deliverable).
++ORG_MIRROR_STRUCTURE = (
++    ("h1-title",        re.compile(r'^#\s+\S', re.MULTILINE)),
++    ("org-tier-marker", re.compile(r'org[-\s]instruction|org[-\s]tier|organisation-level', re.IGNORECASE)),
++    ("version-marker",  re.compile(r'\bv\d+\.\d+\b', re.IGNORECASE)),
++)
+ 
+ XDOC_CHECKS = {                                       # xid -> label (fns are orchestrated below)
+     "X00": "pointer parses for cross-doc comparison (structural gate)",
+     "X01": "every Box/ClickUp ID + field UUID quoted in supplied docs resolves to the pointer YAML data block",
+     "X02": "GATE-V pin mutually consistent: pointer sha1_pin + version_expected == manifest record",
+     "X03": "GATE-V pin matches the supplied live server-side sha1 (or supplied doc-copy sha1)",
++    "X04": "org-mirror structural/presence conventions hold (structure only — content never echoed)",
++    "X05": "org-mirror baseline-currency: supplied sha1 == manifest-recorded sha1",
+ }
+ XDOC_CLAUSES = {
+     "XL1": ("Rules/Tag Use/charter restate ONLY IDs the pointer data block holds (no cross-doc drift)", ["X01"]),
+     "XL2": ("GATE-V sha1_pin + declared version stay consistent AND match the live doc sha1 (mechanises the load-time assertion)", ["X02", "X03"]),
+     "XL0": ("Cross-doc comparison requires a parseable pointer (malformed = clean FAIL)", ["X00"]),
++    "XL3": ("The org-instruction mirror keeps its ratified structural conventions (presence-anchors; no content echo)", ["X04"]),
++    "XL4": ("The org-mirror copy in circulation matches the manifest-recorded sha1 (org-tier baseline-currency)", ["X05"]),
+ }
+ 
+ 
+-def run_xdoc_checks(pointer_text, docs=None, live_shas=None):
+-    """869dtn48p orchestrator -> (results {xid: (ok, label, detail)}, skipped [info lines]).
+-    docs: {name: str|bytes doc copy}; live_shas: {name: 40-hex server-side sha1}. Checks whose
+-    inputs are absent are SKIPPED with an info line (parameterised activation — never a vacuous
+-    PASS, never a block on missing optional input). Never raises on malformed content."""
++def run_xdoc_checks(pointer_text, docs=None, live_shas=None, org_mirror_record=None):
++    """869dtn48p/869dx7xpc orchestrator -> (results {xid: (ok, label, detail)}, skipped [info]).
++    docs: {name: str|bytes doc copy}; live_shas: {name: 40-hex server-side sha1};
++    org_mirror_record: fixture override for the manifest's optional org_mirror record
++    (default None -> the pinned manifest's ORG_MIRROR_RECORD). Checks whose inputs are absent
++    are SKIPPED with an info line (parameterised activation — never a vacuous PASS, never a
++    block on missing optional input). Never raises on malformed content."""
+     docs, live_shas = docs or {}, live_shas or {}
+     skipped = []
+     try:
+@@ -801,8 +845,54 @@ def run_xdoc_checks(pointer_text, docs=None, live_shas=None):
+     else:
+         skipped.append("X03 not run: no live GATE-V sha1 (--live-sha gate_v=HEX) or gate_v doc copy "
+                        "supplied — the live fetch is the connected seat's downstream step")
++
++    # ---- X04/X05: org-mirror coverage (869dx7xpc) — CONFIDENTIALITY: structure + sha1 only,
++    # mirror content is NEVER echoed into any detail/finding (anchor labels + byte counts only).
++    rec = ORG_MIRROR_RECORD if org_mirror_record is None else org_mirror_record
++    m_copy = docs.get("org_mirror")
++    m_live = live_shas.get("org_mirror")
++    if m_copy is None and m_live is None:
++        skipped.append("X04/X05 not run: org-mirror not supplied (--doc/--live-sha org_mirror=...) — "
++                       "machinery dormant; FLAG: the org-instruction mirror does not exist yet "
++                       "(sibling-item dependency)")
++    else:
++        if m_copy is not None:
++            raw = m_copy.encode("utf-8") if isinstance(m_copy, str) else m_copy
++            text = raw.decode("utf-8", "replace")
++            missing = [label for label, rx in ORG_MIRROR_STRUCTURE if not rx.search(text)]
++            results["X04"] = (not missing, XDOC_CHECKS["X04"],
++                              f"missing structural anchors: {missing} [{len(raw)} bytes]" if missing
++                              else f"all {len(ORG_MIRROR_STRUCTURE)} structural anchors present "
++                                   f"[{len(raw)} bytes]")
++        else:
++            skipped.append("X04 not run: structure needs the mirror doc copy (--doc org_mirror=PATH); "
++                           "only a live sha1 was supplied")
++        got = m_live if m_live is not None else hashlib.sha1(
++            m_copy.encode("utf-8") if isinstance(m_copy, str) else m_copy).hexdigest()
++        gsrc = "supplied live sha1" if m_live is not None else "sha1(supplied mirror copy)"
++        try:
++            rec = _validate_org_mirror_record(rec)
++        except InitError as e:
++            rec, rec_err = None, str(e)
++        else:
++            rec_err = None
++        if rec_err is not None:
++            results["X05"] = (False, XDOC_CHECKS["X05"], f"org_mirror record malformed: {rec_err}")
++        elif rec is None:
++            skipped.append("X05 not run: manifest carries no org_mirror record — record "
++                           "{id, sha1_recorded} at mirror ratification (org-tier baseline-currency "
++                           "activates then)")
++        elif not SHA1_RE.fullmatch(str(got)):
++            results["X05"] = (False, XDOC_CHECKS["X05"], f"supplied org_mirror sha1 malformed: {got!r}")
++        else:
++            ok = str(got).lower() == rec["sha1_recorded"].lower()
++            results["X05"] = (ok, XDOC_CHECKS["X05"],
++                              f"{gsrc} ...{str(got)[-8:]} == recorded (mirror id {rec['id']})" if ok
++                              else f"{gsrc} {got} != recorded {rec['sha1_recorded']} "
++                                   f"(mirror id {rec['id']} — org-tier baseline drift)")
++
+     for name in live_shas:
+-        if name != "gate_v":
++        if name not in XDOC_SHA_CONSUMERS:
+             skipped.append(f"live sha1 for {name!r} supplied but not yet consumed (later cluster items)")
+     return results, skipped
+ 
+@@ -915,6 +1005,8 @@ def report(text, target="<pointer>", results=None, nbytes=None, xdoc=None):
+         xresults, xskipped = xdoc
+         xcov_ok, xcov_lines = coverage_tripwire(manifest=XDOC_CLAUSES, checks=XDOC_CHECKS)
+         out.append("CROSS-DOC CHECKS (869dtn48p — supplied-input family):")
++        out.append("  coverage map (869dx7xpc): "
++                   + "; ".join(f"{n} -> {c}" for n, c in COVERAGE_MAP))
+         for xid in sorted(xresults):
+             ok, label, detail = xresults[xid]
+             if not ok:
+@@ -952,7 +1044,8 @@ def _failed_set(results):
+ 
+ 
+ def selftest(emit_dir=None):
+-    from test_layer1_lint import FIXTURES, XDOC_FIXTURES   # external fixtures (§3.1 + 869dtn48p)
++    # external fixtures (§3.1 + 869dtn48p + 869dx7xpc)
++    from test_layer1_lint import FIXTURES, XDOC_FIXTURES, XDOC_FIXTURES2
+     clean_text = _load_baseline()                # sha1-pinned frozen baseline (was FROZEN_BASELINE)
+     print(f"SELF-TEST (HERMETIC — sha1-pinned baseline.md, v3.7 / etag-16 snapshot)")
+     print(f"  baseline bytes: {len(clean_text.encode('utf-8'))}")
+@@ -969,8 +1062,9 @@ def selftest(emit_dir=None):
+                 print(f"           BASELINE FAIL {cid}: {detail}")
+ 
+     passed = 0
+-    # pointer fixtures + tripwire + tier-schema + xdoc fixtures + xdoc tripwire
+-    total = len(FIXTURES) + 2 + len(XDOC_FIXTURES) + 1
++    # pointer fixtures + tripwire + tier-schema + xdoc fixtures (both tables) + xdoc tripwire
++    # + the org-mirror confidentiality (no-echo) fixture
++    total = len(FIXTURES) + 2 + len(XDOC_FIXTURES) + len(XDOC_FIXTURES2) + 1 + 1
+     print()
+     for fid, desc, mutate, expected in FIXTURES:
+         try:
+@@ -1017,13 +1111,17 @@ def selftest(emit_dir=None):
+     print(f"           expected accept 3/3 + reject 4/4 -> "
+           f"accepted={'3/3' if tier_accept else 'BAD'}, rejected={tier_reject}/4")
+ 
+-    # 869dtn48p XDOC family fixtures (synthetic sovereign-doc copies; exact failing-set match,
+-    # same contract as the pointer fixtures above).
++    # 869dtn48p/869dx7xpc XDOC family fixtures (synthetic doc copies; exact failing-set match,
++    # same contract as the pointer fixtures above). XDOC_FIXTURES2 carries a 5th element: the
++    # org_mirror_record override.
+     print()
+-    for fid, desc, build, expected in XDOC_FIXTURES:
++    for entry in XDOC_FIXTURES + XDOC_FIXTURES2:
++        fid, desc, build, expected = entry
+         try:
+-            ptr, docs, shas = build(clean_text)
+-            xres, _skip = run_xdoc_checks(ptr, docs, shas)
++            built = build(clean_text)
++            ptr, docs, shas = built[0], built[1], built[2]
++            rec = built[3] if len(built) > 3 else None
++            xres, _skip = run_xdoc_checks(ptr, docs, shas, org_mirror_record=rec)
+             failed = _failed_set(xres)
+             ok = (failed == expected)
+             detail = (f"failed={sorted(failed)} == expected" if ok
+@@ -1035,6 +1133,22 @@ def selftest(emit_dir=None):
+         verb = "stay clean" if not expected else f"FAIL exactly {sorted(expected)}"
+         print(f"  [{'OK' if ok else 'BAD'}] {fid}: {desc}")
+         print(f"           expected to {verb} -> {detail}")
++
++    # 869dx7xpc confidentiality fixture: mirror CONTENT must never be echoed into any xdoc
++    # label / detail / skip-note — only structure labels, byte counts and sha1s may appear.
++    sentinel = "ORG-CONTENT-SENTINEL-DO-NOT-ECHO"
++    bad_mirror = f"# wrong shape {sentinel}\n"       # fails X04 + X05 -> worst-case output paths
++    xres, xskip = run_xdoc_checks(clean_text, {"org_mirror": bad_mirror}, {},
++                                  org_mirror_record={"id": "424242424242",
++                                                     "sha1_recorded": "beefbeefbeefbeefbeefbeefbeefbeefbeefbeef"})
++    blob = " ".join(f"{l} {d}" for _ok, l, d in xres.values()) + " " + " ".join(xskip)
++    conf_ok = sentinel not in blob
++    if conf_ok:
++        passed += 1
++    print(f"  [{'OK' if conf_ok else 'BAD'}] FXCONF-mirror-no-echo: org-mirror content never appears "
++          f"in xdoc output (structure/sha1 only)")
++    print(f"           expected sentinel absent from all labels/details/notes -> "
++          f"{'absent' if conf_ok else 'LEAKED'}")
+     xinj = dict(XDOC_CLAUSES)
+     xinj["XL99"] = ("DELIBERATELY UNCOVERED xdoc rule", [])
+     xcov_ok, _ = coverage_tripwire(manifest=xinj, checks=XDOC_CHECKS)
+diff --git a/test_layer1_lint.py b/test_layer1_lint.py
+index b5c2a50..0be9d98 100644
+--- a/test_layer1_lint.py
++++ b/test_layer1_lint.py
+@@ -268,6 +268,37 @@ XDOC_FIXTURES = [
+ ]
+ 
+ 
++# ---- 869dx7xpc org-mirror fixtures. XDOC_FIXTURES2 entries carry a 5th element: the
++# org_mirror_record override passed to run_xdoc_checks (None = manifest default, i.e. absent).
++_MIRROR_OK = ("# ORG-INSTRUCTION MIRROR — Teams (synthetic fixture copy) v1.0\n"
++              "Org-tier conventions… ORG-CONTENT-SENTINEL-DO-NOT-ECHO\n")
++_MIRROR_OK_SHA1 = hashlib.sha1(_MIRROR_OK.encode("utf-8")).hexdigest()
++
++
++def _rec(sha):
++    return {"id": "424242424242", "sha1_recorded": sha}
++
++
++XDOC_FIXTURES2 = [
++    ("XF11-mirror-clean", "mirror copy passes all structural anchors; sha1 == recorded",
++     lambda base: (base, {"org_mirror": _MIRROR_OK}, {}, _rec(_MIRROR_OK_SHA1)), frozenset()),
++    ("XF12-mirror-anchor-missing", "mirror lacking the version marker fails structure (X04) only",
++     lambda base: (base, {"org_mirror": "# ORG-INSTRUCTION MIRROR (no version line)\n"}, {},
++                   _rec(hashlib.sha1("# ORG-INSTRUCTION MIRROR (no version line)\n".encode()).hexdigest())),
++     frozenset({"X04"})),
++    ("XF13-mirror-currency-drift", "structurally-clean mirror whose sha1 != recorded (X05 only)",
++     lambda base: (base, {"org_mirror": _MIRROR_OK}, {},
++                   _rec("beefbeefbeefbeefbeefbeefbeefbeefbeefbeef")), frozenset({"X05"})),
++    ("XF14-mirror-no-record", "mirror supplied but manifest has no record: X04 runs, X05 skips (flag)",
++     lambda base: (base, {"org_mirror": _MIRROR_OK}, {}, None), frozenset()),
++    ("XF15-mirror-live-sha-drift", "live mirror sha1 supplied (no copy): X04 skips, X05 fails on drift",
++     lambda base: (base, {}, {"org_mirror": "beefbeefbeefbeefbeefbeefbeefbeefbeefbeef"},
++                   _rec(_MIRROR_OK_SHA1)), frozenset({"X05"})),
++    ("XF16-mirror-record-malformed", "record with a non-40-hex sha1_recorded fails X05 closed",
++     lambda base: (base, {"org_mirror": _MIRROR_OK}, {}, _rec("nothex")), frozenset({"X05"})),
++]
++
++
+ # ============================================================================
+ # §5 DIFFERENTIAL HARNESS
+ # ============================================================================

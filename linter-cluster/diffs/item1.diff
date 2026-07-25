@@ -1,0 +1,213 @@
+diff --git a/layer1_lint.py b/layer1_lint.py
+index 96d1140..04f00d7 100644
+--- a/layer1_lint.py
++++ b/layer1_lint.py
+@@ -16,6 +16,10 @@ floors become partition-ready (scope-tagged, org-default):
+                            (flat sets/list of id-STRINGS; scope/tier metadata never enters set-math).
+   * test_layer1_lint.py  — the 34 known-bad fixtures + the differential harness.
+ 
++869drd6uy: manifest v1.1 adds a top-level `tier:` declaration (org|personal|project) — the
++forward-compat hook for the tier-aware ENGINE/POLICY/SCOPE split. Validated fail-closed at load,
++exposed as MANIFEST_TIER; C00-C13 semantics UNCHANGED (full cross-tier engine = flagged follow-on).
++
+ Init-failure contract (F2): a missing / unreadable / sha1-mismatched (incl. a CRLF rewrite)
+ baseline or manifest aborts with a dedicated INIT-FAILURE message and exit code 3 — never a
+ traceback, never a C00-C13 verdict, and distinct from argparse's native exit 2 for CLI-usage errors.
+@@ -50,12 +54,9 @@ IMMUTABLE_DOCS = {"pointer", "gate_v"}
+ # C13 numeric-threshold allow-list: exactly the context_thresholds keys that MUST carry a
+ # resolved int (bool rejected).
+ NUMERIC_THRESHOLD_KEYS = {"single_file_kb", "cumulative_session_kb", "large_docs"}
+-# C02 contextual-prose-ID allow-list: long-IDs that legitimately appear in the pointer PROSE as
+-# CONTEXT rather than as an enumerable Box/ClickUp target that must be mirrored in the YAML data
+-# block. 20433935 is the ClickUp WORKSPACE id ("ClickUp spaces are owned by workspace 20433935") —
+-# it is not itself a space/list/Box id enumerated in the data block, so it is exempt from C02's
+-# prose-ID-resolves-in-YAML check. (v4.3 determination 2026-07-16: contextual, NOT a pointer
+-# prose-vs-YAML defect — the pointer is SOUND; this closes a C02 parser gap, not a pointer bug.)
++# C02 contextual-prose-ID allow-list: long-IDs legitimately appearing in pointer PROSE as context,
++# not as enumerable targets mirrored in the YAML. 20433935 = the ClickUp WORKSPACE id (v4.3
++# determination 2026-07-16: contextual — a C02 parser-gap closure, not a pointer defect).
+ CONTEXTUAL_PROSE_IDS = frozenset({"20433935"})
+ 
+ UUID_RE = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-'
+@@ -72,7 +73,11 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
+ BASELINE_PATH = os.path.join(_HERE, "baseline.md")
+ MANIFEST_PATH = os.path.join(_HERE, "manifest.yaml")
+ BASELINE_SHA1 = "dd5da45a1f93963c6f1c381e9dcd292f6f79333d"   # == live v4.4 pointer (Box 2289600889999, DEPLOYED-LIVE copy)
+-MANIFEST_SHA1 = "b47a2f31412c0d8385f98a197e4ab27a2092cccb"   # re-pinned for the v4.3 floor re-sync (7-tier precedence + CloudHQ never-write)
++MANIFEST_SHA1 = "0397bfd11cfe8023aa7eb4808681d0bd598ddad3"   # re-pinned for manifest v1.1 (869drd6uy: + top-level tier: declaration; floors unchanged)
++
++# 869drd6uy: the manifest declares WHICH governance tier it floors (org -> personal -> project);
++# validated fail-closed at load, exposed as MANIFEST_TIER, never enters the C00-C13 set-math.
++MANIFEST_TIERS = ("org", "personal", "project")
+ 
+ 
+ class InitError(Exception):
+@@ -96,11 +101,20 @@ def _read_pinned(path, want_sha1, label):
+     return raw
+ 
+ 
++def _validate_tier(tier):
++    """869drd6uy: `tier` must be a MANIFEST_TIERS member; else InitError. Fail-closed for FUTURE
++    re-pins (the pinned manifest carries a valid tier; a missing/unknown one is never defaulted)."""
++    if tier not in MANIFEST_TIERS:
++        raise InitError(f"manifest tier {tier!r} invalid (expected one of {list(MANIFEST_TIERS)})")
++    return tier
++
++
+ def _load_manifest():
+     """Load + sha1-verify manifest.yaml and PROJECT it (F5) into the exact native primitives
+     C00-C13 expect: REQUIRED_NEVERWRITE_IDS / REQUIRED_DROPZONE_IDS as flat sets of id-STRINGS,
+     CANONICAL_PRECEDENCE as a list of name-STRINGS in tier order. scope/tier metadata is dropped
+-    here and NEVER reaches the set-math (a dict in a set would raise unhashable-type)."""
++    here and NEVER reaches the set-math (a dict in a set would raise unhashable-type).
++    v1.1 (869drd6uy): also validates + returns the manifest's top-level `tier:` declaration."""
+     raw = _read_pinned(MANIFEST_PATH, MANIFEST_SHA1, "manifest")
+     try:
+         m = yaml.safe_load(raw)
+@@ -119,7 +133,8 @@ def _load_manifest():
+         if not all(isinstance(x, str) for x in coll):
+             raise InitError(f"manifest {name} did not project to id/name-strings "
+                             f"(non-str element would corrupt set-math)")
+-    return nw, dz, prec, pin
++    tier = _validate_tier(m.get("tier"))
++    return nw, dz, prec, pin, tier
+ 
+ 
+ def _load_baseline():
+@@ -131,7 +146,8 @@ def _load_baseline():
+ # floors), so it aborts cleanly with exit 3 before argparse runs. The baseline is loaded lazily
+ # (only the selftest/emit paths need it), so a baseline fault does not block a normal lint run.
+ try:
+-    REQUIRED_NEVERWRITE_IDS, REQUIRED_DROPZONE_IDS, CANONICAL_PRECEDENCE, GATE_V_PIN = _load_manifest()
++    (REQUIRED_NEVERWRITE_IDS, REQUIRED_DROPZONE_IDS, CANONICAL_PRECEDENCE, GATE_V_PIN,
++     MANIFEST_TIER) = _load_manifest()
+ except InitError as _e:
+     sys.stderr.write(f"INIT-FAILURE: {_e}\n")
+     sys.exit(INIT_EXIT)
+@@ -362,14 +378,10 @@ def c06_mutability_partition(prose, data):
+ 
+ 
+ def c07_jr_pattern(prose, data):
+-    """(JR)-field rule integrity. v4.3: the rule lives in jr_field_rule.{allow_list, consent_gated,
+-    never_write} — the v4.1 restructure that REPLACED jr_owned_default_no_write / jr_only_never_write
+-    / cowork_writable_jr_fields (a pre-v4.1 engine that still read those keys enforced NOTHING on the
+-    live pointer — silent vacuity; closed 2026-07-16). The v4.1 rule is FIELD-ID-based and rename-proof
+-    ("match by FIELD-ID, never display name"), so this check is ID-centric and does NOT audit the
+-    display-name/(JR)-suffix: the name is a non-authoritative label, and a suffix audit would both
+-    false-flag legitimate names (e.g. "JR Status (ONLY to be Changed by JR)", the deferred Mode->Context
+-    rename) and fight the id-based model. Two invariants:
++    """(JR)-field rule integrity over jr_field_rule.{allow_list, consent_gated, never_write}
++    (the v4.1 FIELD-ID-based restructure; pre-v4.1 key vacuity closed 2026-07-16). ID-centric by
++    design — display names are non-authoritative labels ("match by FIELD-ID, never display name"),
++    so no (JR)-suffix audit. Two invariants:
+       (a) UUID VALIDITY — every enumerated field id, across ALL THREE classes, is a well-formed UUID;
+       (b) CLASS DISJOINTNESS — no field-id appears in more than one class (a field cannot be e.g. both
+           allow-list-writable AND never-write; the C06-class self-contradiction applied to JR fields)."""
+@@ -496,14 +508,10 @@ def c10_neverwrite_category(prose, data):
+     msec = re.search(r'##\s*ABSOLUTE NEVER-WRITE.*?(?=\n##\s|\Z)', prose, re.DOTALL | re.IGNORECASE)
+     if msec:
+         sect = msec.group(0)
+-        # v4.3 (2026-07-16): the '## ABSOLUTE NEVER-WRITE' *section* now also carries the NEVER-GRANT
+-        # guard, the AUTOMATION FIREWALL, and the disambiguation warning — all of which cite
+-        # never_grant / writable_baseline IDs (367146590337 "AI - Claude - Max"; 390802629329
+-        # "AI - Claude - Teams") as CONTRAST, not as never-write claims. Scope the harvest to the
+-        # never-write ENUMERATION only (text before the first of those sub-headings), so a contrast
+-        # ID is never mistaken for a never-write omission/escalation — INDEPENDENTLY of the live
+-        # writable_baseline zone (a malformed-zone C12 fixture may legitimately empty it). Defence-
+-        # in-depth: also subtract the YAML never_grant set (a distinct class from never_write).
++        # v4.3 (2026-07-16): the section also carries NEVER-GRANT / AUTOMATION-FIREWALL /
++        # disambiguation text citing contrast IDs (367146590337, 390802629329) that are NOT
++        # never-write claims — harvest only the enumeration (text before the first sub-heading),
++        # and subtract the YAML never_grant set (distinct class) as defence-in-depth.
+         cut = re.search(r'\*\*NEVER-GRANT guard|\*\*AUTOMATION FIREWALL|Disambiguation warning', sect, re.IGNORECASE)
+         enum = sect[:cut.start()] if cut else sect
+         prose_nw_ids = set(LONGID_RE.findall(enum))
+@@ -588,12 +596,10 @@ def c13_schema_limits_guard(prose, data):
+           is required and is never range-checked.
+     Ratified invariant: the canonical subsystems `clickup`, `box`, `context_thresholds` must each
+     be present AND be a mapping/dict; and every numeric context threshold (the explicit
+-    NUMERIC_THRESHOLD_KEYS allow-list — single_file_kb / cumulative_session_kb / large_docs), WHEN
+-    PRESENT, must carry a real `int` (bool is NOT an acceptable int). v0.2.6: the old `'kb'/'docs'
+-    in k` substring heuristic is replaced by this explicit allow-list — it would have false-
+-    positived any future non-numeric key merely containing those substrings, and silently stopped
+-    checking a renamed key. Exception-safe: any malformed shape is a clean FAIL. Scope is
+-    deliberately the three named subsystems only (not the optional pointers)."""
++    NUMERIC_THRESHOLD_KEYS allow-list), WHEN PRESENT, must carry a real `int` (bool rejected;
++    v0.2.6 replaced the false-positive-prone substring heuristic with the allow-list).
++    Exception-safe: any malformed shape is a clean FAIL. Scope is deliberately the three named
++    subsystems only (not the optional pointers)."""
+     errs = []
+     if not isinstance(data, dict):
+         return False, f"data block is {type(data).__name__}, not a mapping"
+@@ -802,7 +808,8 @@ def selftest(emit_dir=None):
+     from test_layer1_lint import FIXTURES        # external fixtures (§3.1)
+     clean_text = _load_baseline()                # sha1-pinned frozen baseline (was FROZEN_BASELINE)
+     print(f"SELF-TEST (HERMETIC — sha1-pinned baseline.md, v3.7 / etag-16 snapshot)")
+-    print(f"  baseline bytes: {len(clean_text.encode('utf-8'))}\n")
++    print(f"  baseline bytes: {len(clean_text.encode('utf-8'))}")
++    print(f"  manifest tier : {MANIFEST_TIER} (v1.1 schema hook, 869drd6uy)\n")
+ 
+     base_results = run_checks(clean_text)
+     base_cov_ok, _ = coverage_tripwire()
+@@ -815,7 +822,7 @@ def selftest(emit_dir=None):
+                 print(f"           BASELINE FAIL {cid}: {detail}")
+ 
+     passed = 0
+-    total = len(FIXTURES) + 1            # + the tripwire fixture
++    total = len(FIXTURES) + 2            # + the tripwire fixture + the manifest tier-schema fixture
+     print()
+     for fid, desc, mutate, expected in FIXTURES:
+         try:
+@@ -845,6 +852,23 @@ def selftest(emit_dir=None):
+     print(f"  [{'OK' if trip_caught else 'BAD'}] FXCOV-uncovered-rule: a clause with no mapped check")
+     print(f"           expected coverage tripwire to FAIL -> {'fired' if trip_caught else 'did NOT fire'}")
+ 
++    # 869drd6uy tier-schema self-check: exercise _validate_tier's accept AND reject paths so a
++    # future manifest re-pin cannot silently regress the fail-closed tier contract.
++    tier_accept = all(_validate_tier(t) == t for t in MANIFEST_TIERS)
++    tier_reject = 0
++    for _bad in (None, "global", "ORG", 7):
++        try:
++            _validate_tier(_bad)
++        except InitError:
++            tier_reject += 1
++    tier_ok = tier_accept and tier_reject == 4
++    if tier_ok:
++        passed += 1
++    print(f"  [{'OK' if tier_ok else 'BAD'}] FXTIER-manifest-tier-enum: tier declaration accepts "
++          f"{list(MANIFEST_TIERS)} only (fail-closed InitError otherwise)")
++    print(f"           expected accept 3/3 + reject 4/4 -> "
++          f"accepted={'3/3' if tier_accept else 'BAD'}, rejected={tier_reject}/4")
++
+     all_ok = base_clean and (passed == total)
+     print(f"\nSELF-TEST RESULT: {passed}/{total} fixtures correct (exact failing-set match); "
+           f"baseline {'clean' if base_clean else 'BROKEN'} -> {'PASS' if all_ok else 'FAIL'}")
+diff --git a/manifest.yaml b/manifest.yaml
+index c14b4f4..45df350 100644
+--- a/manifest.yaml
++++ b/manifest.yaml
+@@ -10,10 +10,23 @@
+ # (default org) + a `tier`. The loader PROJECTS these declarative dicts into the
+ # exact native primitives the legacy engine expects (flat set/list of ID *strings*)
+ # BEFORE they reach C00-C13; the scope/tier metadata NEVER enters the set-math.
++#
++# v1.1 (2026-07-25, 869drd6uy): + top-level `tier:` declaration — the forward-compat
++# hook for the tier-aware ENGINE/POLICY/SCOPE split. No floor value changed.
+ # ---------------------------------------------------------------------------
+-manifest_version: "1.0"
++manifest_version: "1.1"
+ source_engine_version: "0.2.8"
+ 
++# --- Tier declaration (869drd6uy) -------------------------------------------
++# WHICH governance tier this manifest is the policy floor for. Permissions exist
++# at three tiers (Organisation -> Personal Level-1 -> Project). The engine
++# validates this value against {org, personal, project} at load (fail-closed
++# InitError, never a silent default) and exposes it as MANIFEST_TIER; it never
++# enters the C00-C13 set-math. Only the personal tier exists today; org/project
++# manifests are follow-on work (each generated FROM its tier's source doc and
++# sha1-pinned, per the tier-split design: org-floor <= personal-floor <= project-floor).
++tier: personal
++
+ # --- C10 hardcoded root-of-trust floor (8 IDs) -----------------------------
+ never_write_ids:
+   - { id: "385430558352",  scope: org, tier: root_of_trust, desc: "DO-NOT-TOUCH subtree (root of trust)" }
