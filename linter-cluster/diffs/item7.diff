@@ -1,5 +1,5 @@
 diff --git a/layer1_lint.py b/layer1_lint.py
-index 03d826b..04bc870 100644
+index 03d826b..c0e90b4 100644
 --- a/layer1_lint.py
 +++ b/layer1_lint.py
 @@ -769,7 +769,10 @@ def coverage_tripwire(manifest=CLAUSE_MANIFEST, checks=CHECKS):
@@ -14,7 +14,7 @@ index 03d826b..04bc870 100644
  
  # 869dx7xpc COVERAGE MAP (re-scoped; 869dtn4e2 added the H-family slots): the linted doc
  # universe and which family covers each slot.
-@@ -939,11 +942,102 @@ def run_xdoc_checks(pointer_text, docs=None, live_shas=None, org_mirror_record=N
+@@ -939,11 +942,103 @@ def run_xdoc_checks(pointer_text, docs=None, live_shas=None, org_mirror_record=N
                                     f"(mirror id {rec['id']} — org-tier baseline drift)")
  
      for name in live_shas:
@@ -87,8 +87,9 @@ index 03d826b..04bc870 100644
 +                              f"cannot verify: pointer parse failed ({type(e).__name__}: {e})")
 +            return results, skipped
 +        recorded = {
-+            "gate_v": ((data.get("pointed_to_docs") or {}).get("gate_v") or {}).get("sha1_pin")
-+                      if isinstance(data.get("pointed_to_docs"), dict) else None,
++            "gate_v": data["pointed_to_docs"]["gate_v"].get("sha1_pin")
++                      if isinstance(data.get("pointed_to_docs"), dict)
++                      and isinstance(data["pointed_to_docs"].get("gate_v"), dict) else None,
 +            "scope_registry": (data.get("scope_registry") or {}).get("sha1_pin")
 +                              if isinstance(data.get("scope_registry"), dict) else None,
 +            "airlock_writer": (data.get("airlock_writer") or {}).get("sha1_pin")
@@ -118,7 +119,7 @@ index 03d826b..04bc870 100644
  # ============================================================================
  # STATIC-DOC HYGIENE FAMILY — 869dtn4e2 (tier 1: deterministic, offline, on-demand). Runs on
  # the SAME --doc copies as the XDOC family; pure text/structure checks, no live state. The
-@@ -1301,7 +1395,7 @@ def run_checks(text):
+@@ -1301,7 +1396,7 @@ def run_checks(text):
      return results
  
  
@@ -127,7 +128,7 @@ index 03d826b..04bc870 100644
      """STEP 4 feed (issue-tracker pattern). Returns the list of human-action items
      keyed by a STABLE finding-id, for an idempotent ClickUp upsert by the seat.
      Clean run -> [] (no tasks for clean runs). The linter does NOT write ClickUp
-@@ -1370,8 +1464,23 @@ def action_items(text, results=None, xdoc=None, hyg=None, dochyg=None):
+@@ -1370,8 +1465,23 @@ def action_items(text, results=None, xdoc=None, hyg=None, dochyg=None):
                      items.append({"finding_id": "L1LINT-DOCHYG-COVERAGE", "kind": "uncovered_rule",
                                    "summary": "doc-hygiene coverage tripwire fired", "detail": ln.strip()})
          dochyg_ok = all(r[0] for r in dresults.values()) and dcov_ok
@@ -152,7 +153,7 @@ index 03d826b..04bc870 100644
      return {"result": "PASS" if overall else "FAIL",
              "exit": 0 if overall else 1,
              "action_items": items,          # -> ClickUp tasks (idempotent by finding_id)
-@@ -1381,13 +1490,14 @@ def action_items(text, results=None, xdoc=None, hyg=None, dochyg=None):
+@@ -1381,13 +1491,14 @@ def action_items(text, results=None, xdoc=None, hyg=None, dochyg=None):
              "proposed_checks": []}
  
  
@@ -168,7 +169,7 @@ index 03d826b..04bc870 100644
      results = run_checks(text) if results is None else results
      cov_ok, cov_lines = coverage_tripwire()
      out = []
-@@ -1465,7 +1575,25 @@ def report(text, target="<pointer>", results=None, nbytes=None, xdoc=None, hyg=N
+@@ -1465,7 +1576,25 @@ def report(text, target="<pointer>", results=None, nbytes=None, xdoc=None, hyg=N
          out.append(f"  => {'PASS' if dcov_ok else 'FAIL'}")
          out.append("")
          dochyg_ok = dochyg_ok and dcov_ok
@@ -195,7 +196,7 @@ index 03d826b..04bc870 100644
      out.append(f"RESULT: {'PASS (exit 0)' if overall else 'FAIL (exit 1)'}")
      return "\n".join(out), (0 if overall else 1)
  
-@@ -1491,7 +1619,7 @@ def _failed_set(results):
+@@ -1491,7 +1620,7 @@ def _failed_set(results):
  def selftest(emit_dir=None):
      # external fixtures (§3.1 + 869dtn48p + 869dx7xpc + 869dwncba + 869dtn4e2)
      from test_layer1_lint import (FIXTURES, XDOC_FIXTURES, XDOC_FIXTURES2, HYG_FIXTURES,
@@ -204,7 +205,7 @@ index 03d826b..04bc870 100644
      clean_text = _load_baseline()                # sha1-pinned frozen baseline (was FROZEN_BASELINE)
      print(f"SELF-TEST (HERMETIC — sha1-pinned baseline.md, v3.7 / etag-16 snapshot)")
      print(f"  baseline bytes: {len(clean_text.encode('utf-8'))}")
-@@ -1512,7 +1640,7 @@ def selftest(emit_dir=None):
+@@ -1512,7 +1641,7 @@ def selftest(emit_dir=None):
      # + the org-mirror confidentiality fixture + hygiene fixtures + hygiene tripwire
      # + doc-hygiene fixtures + doc-hygiene tripwire
      total = (len(FIXTURES) + 2 + len(XDOC_FIXTURES) + len(XDOC_FIXTURES2) + 1 + 1
@@ -213,7 +214,7 @@ index 03d826b..04bc870 100644
      print()
      for fid, desc, mutate, expected in FIXTURES:
          try:
-@@ -1659,6 +1787,32 @@ def selftest(emit_dir=None):
+@@ -1659,6 +1788,32 @@ def selftest(emit_dir=None):
      print(f"  [{'OK' if dtrip_caught else 'BAD'}] FXDCOV-uncovered-dochygiene-rule: a doc-hygiene clause with no mapped check")
      print(f"           expected doc-hygiene coverage tripwire to FAIL -> {'fired' if dtrip_caught else 'did NOT fire'}")
  
@@ -246,7 +247,7 @@ index 03d826b..04bc870 100644
      all_ok = base_clean and (passed == total)
      print(f"\nSELF-TEST RESULT: {passed}/{total} fixtures correct (exact failing-set match); "
            f"baseline {'clean' if base_clean else 'BROKEN'} -> {'PASS' if all_ok else 'FAIL'}")
-@@ -1703,7 +1857,7 @@ def main(argv=None):
+@@ -1703,7 +1858,7 @@ def main(argv=None):
      # for gate_v; X01 decodes utf-8/replace for ID harvest). Unreadable file = CLI-usage error.
      try:
          doc_paths = _parse_named_values(args.doc, "--doc", XDOC_DOC_NAMES)
@@ -255,7 +256,7 @@ index 03d826b..04bc870 100644
      except ValueError as e:
          p.error(str(e))
      docs = {}
-@@ -1729,6 +1883,7 @@ def main(argv=None):
+@@ -1729,6 +1884,7 @@ def main(argv=None):
              p.error(f"--{label}-dump: cannot read {path!r}: {type(e).__name__}: {e}")
      hyg_active = dumps["comments"] is not None or dumps["audit"] is not None
      dochyg_active = any(n in docs for n in DOCHYG_ALL_DOCS)   # 869dtn4e2: same --doc inputs
@@ -263,7 +264,7 @@ index 03d826b..04bc870 100644
  
      # baseline-dependent modes may hit a lazy init-failure -> clean exit 3 (F2), never a traceback.
      try:
-@@ -1767,25 +1922,27 @@ def main(argv=None):
+@@ -1767,25 +1923,27 @@ def main(argv=None):
                 if hyg_active else None)             # hygiene needs no pointer text — still runs
          dochyg = (run_dochygiene_checks(None, docs)
                    if dochyg_active else None)       # doc-local checks run; H02 fails closed
@@ -296,10 +297,10 @@ index 03d826b..04bc870 100644
      return code
  
 diff --git a/test_layer1_lint.py b/test_layer1_lint.py
-index 4fffbbc..b7f42c2 100644
+index 4fffbbc..fee2157 100644
 --- a/test_layer1_lint.py
 +++ b/test_layer1_lint.py
-@@ -390,6 +390,41 @@ DH_FIXTURES = [
+@@ -390,6 +390,50 @@ DH_FIXTURES = [
  ]
  
  
@@ -335,6 +336,15 @@ index 4fffbbc..b7f42c2 100644
 +     frozenset({"P02"})),
 +    ("PN08-no-shas", "family invoked with no live shas: both checks skip with notes, nothing fails",
 +     lambda base: (base, {}), frozenset()),
++    # Gemini review Finding 1 (item-07 revision): pointed_to_docs.gate_v as a NON-dict used to
++    # crash the P02 recorded-pin lookup with AttributeError ('list' has no .get) — the
++    # `(... or {})` idiom only guards falsy values, not truthy non-dicts. Must be a clean P02
++    # FAIL ("recorded pin malformed/absent"), never a crash.
++    ("PN09-gatev-nondict", "pointed_to_docs.gate_v is a list: P02 fails cleanly, no AttributeError",
++     lambda base: (_sub(base, 'gate_v:  { id: "2289594143154", sha1_pin: '
++                              '"d6d54ae7d1d632f54e7f122efa3a1ccae7269860", version_expected: "v3.1" }',
++                        'gate_v:  ["broken"]', "PN09"),
++                   {"gate_v": _GATEV_PIN}), frozenset({"P02"})),
 +]
 +
 +

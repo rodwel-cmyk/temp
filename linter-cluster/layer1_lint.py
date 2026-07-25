@@ -1010,8 +1010,9 @@ def run_pin_checks(pointer_text, live_shas=None):
                               f"cannot verify: pointer parse failed ({type(e).__name__}: {e})")
             return results, skipped
         recorded = {
-            "gate_v": ((data.get("pointed_to_docs") or {}).get("gate_v") or {}).get("sha1_pin")
-                      if isinstance(data.get("pointed_to_docs"), dict) else None,
+            "gate_v": data["pointed_to_docs"]["gate_v"].get("sha1_pin")
+                      if isinstance(data.get("pointed_to_docs"), dict)
+                      and isinstance(data["pointed_to_docs"].get("gate_v"), dict) else None,
             "scope_registry": (data.get("scope_registry") or {}).get("sha1_pin")
                               if isinstance(data.get("scope_registry"), dict) else None,
             "airlock_writer": (data.get("airlock_writer") or {}).get("sha1_pin")

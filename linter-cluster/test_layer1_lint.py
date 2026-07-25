@@ -422,6 +422,15 @@ PN_FIXTURES = [
      frozenset({"P02"})),
     ("PN08-no-shas", "family invoked with no live shas: both checks skip with notes, nothing fails",
      lambda base: (base, {}), frozenset()),
+    # Gemini review Finding 1 (item-07 revision): pointed_to_docs.gate_v as a NON-dict used to
+    # crash the P02 recorded-pin lookup with AttributeError ('list' has no .get) — the
+    # `(... or {})` idiom only guards falsy values, not truthy non-dicts. Must be a clean P02
+    # FAIL ("recorded pin malformed/absent"), never a crash.
+    ("PN09-gatev-nondict", "pointed_to_docs.gate_v is a list: P02 fails cleanly, no AttributeError",
+     lambda base: (_sub(base, 'gate_v:  { id: "2289594143154", sha1_pin: '
+                              '"d6d54ae7d1d632f54e7f122efa3a1ccae7269860", version_expected: "v3.1" }',
+                        'gate_v:  ["broken"]', "PN09"),
+                   {"gate_v": _GATEV_PIN}), frozenset({"P02"})),
 ]
 
 
