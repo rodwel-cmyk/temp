@@ -529,21 +529,6 @@ def baseline_text():
         return fh.read()
 
 
-def is_class2(text):
-    """True iff this input falls into Phase-B declared delta class 2: a ```yaml block that parses
-    to a dict with `layer1_data` PRESENT but NOT a Mapping (null/list/scalar). Uses the oracle's
-    own split_doc (same fence extraction the engine uses) so the classification matches reality.
-    The ONLY behavioural change in Phase B on content is this class, so a diverging content input
-    MUST satisfy this predicate (else it is an unexpected regression)."""
-    import yaml
-    try:
-        yt, _ = ORACLE.split_doc(text)
-        doc = yaml.safe_load(yt)
-    except Exception:
-        return False
-    return isinstance(doc, dict) and "layer1_data" in doc and not isinstance(doc["layer1_data"], dict)
-
-
 # ---------------------------------------------------------------------------
 # In-process comparison for CONTENT inputs (no stderr possible: run_checks guards).
 # Captures {exit, stdout(report), per-check failing-set, coverage-tripwire, json feed}.
@@ -621,42 +606,47 @@ def compare_file(path_arg, json_mode):
 # Corpus builders
 # ============================================================================
 def build_content_corpus():
-    """(a) 34 fixtures, (b) live pointer, (e/f) structural + fence edges, plus the Phase-B
-    class-2 non-Mapping inputs. Each: (label, text, phaseB_class2)."""
+    """(a) 34 fixtures, (b) live pointer, (e/f) structural + fence edges, plus the retired
+    class-2 non-Mapping inputs (kept as ordinary corpus members). Each: (label, text,
+    delta_class) — delta_class is None, or a PHASEB_CONTENT_DELTAS key naming the declared
+    delta class this input is a REQUIRED exemplar of (see the registry block below)."""
     base = baseline_text()
     cases = []
     # (a) fixtures
     for fid, desc, mutate, expected in FIXTURES:
-        cases.append((f"fixture:{fid}", mutate(base), False))
+        cases.append((f"fixture:{fid}", mutate(base), None))
     # (b) live pointer (clean)
-    cases.append(("live-pointer", base, False))
+    cases.append(("live-pointer", base, None))
     # (e) structural edges that are CONTENT
-    cases.append(("edge:empty", "", False))
-    cases.append(("edge:truncated", base[:600], False))
-    cases.append(("edge:missing-block", base.replace("```yaml", "```text", 1), False))
-    cases.append(("edge:utf8-bom", "﻿" + base, False))
-    cases.append(("edge:crlf-content", base.replace("\n", "\r\n"), False))
-    cases.append(("edge:multidoc", base + "\n---\nextra_doc: true\n", False))
+    cases.append(("edge:empty", "", None))
+    cases.append(("edge:truncated", base[:600], None))
+    cases.append(("edge:missing-block", base.replace("```yaml", "```text", 1), None))
+    cases.append(("edge:utf8-bom", "﻿" + base, None))
+    cases.append(("edge:crlf-content", base.replace("\n", "\r\n"), None))
+    cases.append(("edge:multidoc", base + "\n---\nextra_doc: true\n", None))
     cases.append(("edge:deeply-nested",
-                  base + "\n```yaml\ndeep: " + ("[" * 200) + ("]" * 200) + "\n```\n", False))
+                  base + "\n```yaml\ndeep: " + ("[" * 200) + ("]" * 200) + "\n```\n", None))
     cases.append(("edge:dup-top-keys",
                   base.replace("layer1_data:", "layer1_data:\ndupe_root: 1\ndupe_root: 2\nlayer1_data2:", 1),
-                  False))
+                  None))
     cases.append(("edge:anchors-aliases",
-                  base + "\n```yaml\nanchored: &a {x: 1}\nref: *a\n```\n", False))
-    # Phase-B class 2: layer1_data present but NOT a Mapping (one class; null/list/scalar)
+                  base + "\n```yaml\nanchored: &a {x: 1}\nref: *a\n```\n", None))
+    # Non-Mapping layer1_data trio (null/list/scalar): the RETIRED v0.2.8-era declared delta
+    # class 2 — oracle a87ce510 now contains the fix, so both engines emit the same clean
+    # single C00 FAIL and these are ordinary equivalence inputs (delta_class=None), retained
+    # for coverage of that path.
     cases.append(("classB2:null", base.replace("layer1_data:\n  precedence:",
-                                                "layer1_data: null\nother:\n  precedence:", 1), True))
+                                                "layer1_data: null\nother:\n  precedence:", 1), None))
     cases.append(("classB2:list", base.replace("layer1_data:\n  precedence:",
-                                                "layer1_data: [1, 2, 3]\nother:\n  precedence:", 1), True))
+                                                "layer1_data: [1, 2, 3]\nother:\n  precedence:", 1), None))
     cases.append(("classB2:scalar", base.replace("layer1_data:\n  precedence:",
-                                                  "layer1_data: \"just a string\"\nother:\n  precedence:", 1), True))
+                                                  "layer1_data: \"just a string\"\nother:\n  precedence:", 1), None))
     # (f) markdown-envelope: multiple / overlapping / unclosed fences
     cases.append(("fence:multiple",
-                  "```yaml\nlayer1_data:\n  junk: 1\n```\n\n" + base, False))
-    cases.append(("fence:unclosed", base + "\n```yaml\nlayer1_data:\n  dangling: 1\n", False))
+                  "```yaml\nlayer1_data:\n  junk: 1\n```\n\n" + base, None))
+    cases.append(("fence:unclosed", base + "\n```yaml\nlayer1_data:\n  dangling: 1\n", None))
     cases.append(("fence:overlapping",
-                  "```yaml\n```yaml\nlayer1_data:\n  x: 1\n```\n" + base, False))
+                  "```yaml\n```yaml\nlayer1_data:\n  x: 1\n```\n" + base, None))
     return cases
 
 
@@ -689,15 +679,107 @@ def build_fuzz_corpus(n=1100, seed=20260619):
                 ls[j] = ls[j] + " [confused, {a: 1}]"
             else:                                        # whitespace / encoding
                 ls[j] = "\t " + ls[j].replace(":", ":​", 1)
-        cases.append((f"fuzz:{i:04d}", "\n".join(ls), False))
+        cases.append((f"fuzz:{i:04d}", "\n".join(ls), None))
     return cases
 
 
 # ============================================================================
 # Phase logic + runner
 # ============================================================================
-PHASEB_FILE_CLASS1 = "file:nonutf8"           # must DIVERGE in Phase B (clean C00 vs traceback)
-PHASEB_STAY_IDENTICAL = {"file:isadir", "file:perm"}   # F3: must stay oracle-identical in both phases
+# ---------------------------------------------------------------------------
+# PHASE-B DECLARED-DELTA REGISTRY (2026-07-26 reconcile, 869e9ekb3) — the SINGLE
+# registration point for expected oracle-vs-NEW divergences ("declared deltas").
+#
+# MODEL
+#   * Phase A (refactor-only gate): the registries are IGNORED — every input must be
+#     oracle-identical, no declared deltas permitted (unchanged semantics).
+#   * Phase B (behaviour gate): every input must be oracle-identical EXCEPT inputs that
+#     match a registered delta below, which MUST diverge exactly as specified:
+#       - a divergence matching no registered delta -> unexpected regression -> FAIL;
+#       - a registered delta that never occurs      -> self-describing FAIL naming the
+#         class/label and its reason (stale declaration) — a fixed-upstream oracle can
+#         therefore never leave a silent stale expectation behind again.
+#   * EMPTY registries (this engine): zero declared deltas — the 869drd6uy package split
+#     is a pure refactor and oracle a87ce510 already contains the class-2 and clean-
+#     nonutf8 fixes, so Phase B is behaviourally equivalent to Phase A for this pair.
+#     That equivalence is the CORRECT state and is stated in the run output.
+#
+# HOW TO DECLARE THE NEXT DELTA (a future behaviour-changing engine edit):
+#   1. CONTENT delta (in-process lint semantics) — add an entry
+#        "class-name": dict(
+#            predicate=<callable text -> bool: True iff the input is in the class>,
+#            new_failed=frozenset({...}),  # NEW engine's exact failing-set on the class
+#            new_exit=<int>,               # NEW engine's non-json exit code
+#            reason="<one line: what changed and why this class must diverge>")
+#      and set delta_class="class-name" on >=1 build_content_corpus() case (a named
+#      exemplar the class is REQUIRED to fire on; enforced by config validation).
+#   2. FILE delta (subprocess file/crash case) — add an entry
+#        "file:<label>": dict(new_exit=<int>, forbid_stderr=("Traceback",),
+#                             reason="<one line>")
+#      for a FILE_CASE_LABELS member that is NOT in PHASEB_STAY_IDENTICAL.
+#   3. Only after Phase B is green is the outgoing engine preserved as the new oracle.
+#
+# RETIRED DECLARATIONS (v0.2.8-era model, removed 2026-07-26; kept as the worked
+# example — they no longer diverge because the oracle contains both fixes):
+#   "non-mapping-layer1-data": dict(   # class 2: layer1_data present but not a Mapping
+#       predicate=<split_doc + safe_load; dict with layer1_data not a dict>,
+#       new_failed=frozenset({"C00"}), new_exit=1,
+#       reason="clean single C00 FAIL instead of downstream .get()-on-None crashes")
+#   "file:nonutf8": dict(new_exit=1, forbid_stderr=("Traceback",),
+#       reason="non-UTF-8 pointer -> clean C00 FAIL instead of an uncaught "
+#              "UnicodeDecodeError traceback")
+# ---------------------------------------------------------------------------
+PHASEB_CONTENT_DELTAS = {}    # {class-name: dict(predicate, new_failed, new_exit, reason)}
+PHASEB_FILE_DELTAS = {}       # {file-label: dict(new_exit, forbid_stderr, reason)}
+FILE_CASE_LABELS = ("file:nonutf8", "file:isadir", "file:perm")
+PHASEB_STAY_IDENTICAL = {"file:isadir", "file:perm"}   # F3: must stay oracle-identical in both phases; never registrable
+
+
+def phaseb_registry_config_errors(content_cases):
+    """Static validation of the declared-delta registries, run EVERY harness run (both
+    phases). Returns self-describing config-error lines; any error fails the run — a
+    malformed or unexercisable declaration must never silently weaken the gate."""
+    errs = []
+    exemplars = {}
+    for label, _text, dclass in content_cases:
+        if dclass is not None:
+            exemplars.setdefault(dclass, []).append(label)
+    for name, spec in PHASEB_CONTENT_DELTAS.items():
+        missing = [k for k in ("predicate", "new_failed", "new_exit", "reason") if k not in spec]
+        if missing:
+            errs.append(f"content delta {name!r}: spec missing {missing}")
+        if not exemplars.get(name):
+            errs.append(f"content delta {name!r}: no named corpus exemplar (set delta_class on "
+                        f">=1 build_content_corpus case) — an unexercised declaration cannot "
+                        f"be verified")
+    for dclass, labels in sorted(exemplars.items()):
+        if dclass not in PHASEB_CONTENT_DELTAS:
+            errs.append(f"corpus case(s) {labels} name undeclared content delta class {dclass!r}")
+    for label, spec in PHASEB_FILE_DELTAS.items():
+        if label not in FILE_CASE_LABELS:
+            errs.append(f"file delta {label!r}: not a known file case (labels: {FILE_CASE_LABELS})")
+        if label in PHASEB_STAY_IDENTICAL:
+            errs.append(f"file delta {label!r}: on PHASEB_STAY_IDENTICAL (F3) — never registrable")
+        missing = [k for k in ("new_exit", "reason") if k not in spec]
+        if missing:
+            errs.append(f"file delta {label!r}: spec missing {missing}")
+    return errs
+
+
+def _match_content_delta(text, r):
+    """The registered content-delta class this DIVERGING compare_content result legitimately
+    matches, or None. Matching is by CAUSE (class predicate) AND exact NEW behaviour
+    (failing-set + exit), never by input label — fuzz inputs that happen to land in a declared
+    class are recognised, and any divergence outside every declared class is a regression."""
+    for name, spec in PHASEB_CONTENT_DELTAS.items():
+        try:
+            in_class = bool(spec["predicate"](text))
+        except Exception:
+            in_class = False
+        if (in_class and set(r["n_failed"]) == set(spec["new_failed"])
+                and r["n_code"] == spec["new_exit"]):
+            return name
+    return None
 
 
 def run_file_and_infra(phase, log):
@@ -715,24 +797,40 @@ def run_file_and_infra(phase, log):
         fh.write("blah")
     os.chmod(permf, 0)
 
-    file_cases = [(PHASEB_FILE_CLASS1, nonutf8), ("file:isadir", adir), ("file:perm", permf)]
+    file_cases = list(zip(FILE_CASE_LABELS, (nonutf8, adir, permf)))
     for label, path in file_cases:
+        # Phase B: a label registered in PHASEB_FILE_DELTAS MUST diverge exactly as declared;
+        # everything else (and everything in Phase A) must be oracle-identical.
+        delta = PHASEB_FILE_DELTAS.get(label) if phase == "B" else None
         for jm in (False, True):
             r = compare_file(path, jm)
             mode = "json" if jm else "text"
-            # Phase B negative test for the non-UTF-8 class: it MUST diverge (clean C00 vs crash).
-            if phase == "B" and label == PHASEB_FILE_CLASS1:
-                ok = (not r["equiv"]) and r["nc"] == 1 and ("Traceback" not in r["ne"])
-                verdict = "DIVERGES-as-specified" if ok else "FAILED-negative-test"
-                results.append((f"{label}[{mode}]", ok, verdict,
-                                f"oracle_exit={r['oc']} new_exit={r['nc']} new_stderr={r['ne'][:60]!r}"))
+            if delta is not None:
+                if r["equiv"]:                       # required divergence absent -> stale declaration
+                    results.append((f"{label}[{mode}]", False, "STALE-DECLARATION",
+                                    f"declared file delta did NOT diverge ({delta['reason']}) — "
+                                    f"retire the declaration or fix the engine"))
+                else:
+                    ok = (r["nc"] == delta["new_exit"]
+                          and not any(t in r["ne"] for t in delta.get("forbid_stderr", ())))
+                    results.append((f"{label}[{mode}]", ok,
+                                    "DIVERGES-as-declared" if ok else "WRONG-DIVERGENCE",
+                                    f"oracle_exit={r['oc']} new_exit={r['nc']} new_stderr={r['ne'][:60]!r}"))
             else:
                 ok = r["equiv"]
                 results.append((f"{label}[{mode}]", ok,
                                 "identical" if ok else "DIVERGED", "; ".join(r["diffs"])[:200]))
 
     # --- (g) infra-sabotage: isolated engine copy; NEW must exit 3 + INIT-FAILURE ---
-    def _infra(label, sabotage, args, need_testmod=False):
+    # 2026-07-26 package reconcile (869e9ekb3): the isolated copy now includes the l1lint/
+    # package (the engine ships as shim + package). Without it the shim's package-missing
+    # fallback exits 3 FIRST and the manifest/baseline sha1-pin paths these 4 cases exist
+    # to exercise never run — the assertions passed VACUOUSLY (Gemini-confirmed). Each case
+    # therefore also asserts the DISCRIMINATING INIT-FAILURE text (`expect`) and that the
+    # shim fallback's fingerprint is ABSENT, so the cases cannot silently go vacuous again.
+    PKG_MISSING_MARKER = "not importable beside"     # the shim fallback's INIT-FAILURE fingerprint
+
+    def _infra(label, sabotage, args, need_testmod=False, expect=()):
         # Manifest is loaded at module import (every mode) -> a normal lint run triggers exit 3.
         # baseline.md is loaded only by --selftest/--emit-fixtures, so a baseline fault must be
         # exercised via --selftest (which needs the fixtures module co-located).
@@ -743,21 +841,38 @@ def run_file_and_infra(phase, log):
         for fn in files:
             with open(os.path.join(HERE, fn), "rb") as s, open(os.path.join(edir, fn), "wb") as d:
                 d.write(s.read())
+        pkg_src, pkg_dst = os.path.join(HERE, "l1lint"), os.path.join(edir, "l1lint")
+        os.mkdir(pkg_dst)
+        for fn in sorted(os.listdir(pkg_src)):       # source modules only — never __pycache__/
+            src = os.path.join(pkg_src, fn)          # .pyc, so stale bytecode can never mask a
+            if (fn == "__pycache__" or fn.endswith((".pyc", ".pyo"))   # missing/altered module
+                    or not os.path.isfile(src)):
+                continue
+            with open(src, "rb") as s, open(os.path.join(pkg_dst, fn), "wb") as d:
+                d.write(s.read())
         sabotage(edir)
         rc, so, se = run_subproc(os.path.join(edir, "layer1_lint.py"), args, cwd=edir)
-        ok = (rc == 3) and ("INIT-FAILURE" in se) and ("Traceback" not in se)
-        results.append((f"infra:{label}", ok,
-                        "exit3+INIT-FAILURE" if ok else f"BAD rc={rc}",
-                        se.strip()[:160]))
+        ok = ((rc == 3) and ("INIT-FAILURE" in se) and ("Traceback" not in se)
+              and all(sub in se for sub in expect)   # the RIGHT init failure (per-case text)...
+              and (PKG_MISSING_MARKER not in se))    # ...and NOT the shim's package fallback
+        if ok:
+            verdict = "exit3+expected-INIT-FAILURE"
+        elif rc != 3:
+            verdict = f"BAD rc={rc}"
+        else:
+            verdict = "BAD exit3-but-wrong-INIT-FAILURE"
+        results.append((f"infra:{label}", ok, verdict, se.strip()[:160]))
 
-    _infra("manifest-deleted", lambda d: os.remove(os.path.join(d, "manifest.yaml")), [BASELINE])
-    _infra("manifest-chmod000", lambda d: os.chmod(os.path.join(d, "manifest.yaml"), 0), [BASELINE])
+    _infra("manifest-deleted", lambda d: os.remove(os.path.join(d, "manifest.yaml")), [BASELINE],
+           expect=("manifest unreadable", "FileNotFoundError"))
+    _infra("manifest-chmod000", lambda d: os.chmod(os.path.join(d, "manifest.yaml"), 0), [BASELINE],
+           expect=("manifest unreadable", "PermissionError"))
     _infra("baseline-sha1-corrupt",
            lambda d: open(os.path.join(d, "baseline.md"), "a").write("x"),
-           ["--selftest"], need_testmod=True)
+           ["--selftest"], need_testmod=True, expect=("baseline.md sha1 mismatch",))
     _infra("baseline-crlf-rewrite",
            lambda d: _crlf_rewrite(os.path.join(d, "baseline.md")),
-           ["--selftest"], need_testmod=True)
+           ["--selftest"], need_testmod=True, expect=("baseline.md sha1 mismatch",))
     return results
 
 
@@ -819,11 +934,19 @@ def run_harness(phase, fuzz_n=1100, k_determinism=3):
     fuzz = build_fuzz_corpus(n=fuzz_n)
     all_content = content + fuzz
 
+    # ---- declared-delta registry config validation (both phases; any error fails the gate) ----
+    cfg_errs = phaseb_registry_config_errors(all_content)
+    if cfg_errs:
+        out("DECLARED-DELTA REGISTRY CONFIG ERRORS:")
+        for e in cfg_errs:
+            out(f"  [REGISTRY-CONFIG] {e}")
+        out("")
+
     # ---- determinism: run the content corpus K times, assert per-case verdict is stable ----
     det_runs = []
     for k in range(k_determinism):
         verdicts = {}
-        for label, text, isB2 in all_content:
+        for label, text, _dclass in all_content:
             r = compare_content(text)
             verdicts[label] = (r["equiv"], tuple(sorted(r["n_failed"])), r["n_code"])
         det_runs.append(verdicts)
@@ -832,39 +955,59 @@ def run_harness(phase, fuzz_n=1100, k_determinism=3):
         f"{'STABLE (identical run-to-run)' if det_ok else 'NON-DETERMINISTIC (FAIL)'}")
 
     # ---- equivalence verdicts ----
-    # Phase A: every content/fuzz input must be NEW == ORACLE.
-    # Phase B: identical EXCEPT inputs in declared delta class 2 (non-Mapping layer1_data), which
-    #   MUST diverge to a clean single {C00} (exit 1). A divergence is classified by CAUSE
-    #   (is_class2 + NEW=={C00}), not by label — so fuzz inputs that happen to hit class 2 are
-    #   recognised as legitimate, and any divergence that is NOT class 2 is an unexpected regression.
-    content_pass = 0; content_fail = []; declared_div = []; named_b2 = []; slow = []
-    for label, text, isB2 in all_content:
+    # Phase A: every content/fuzz input must be NEW == ORACLE (registries ignored; no declared
+    #   deltas permitted).
+    # Phase B: identical EXCEPT inputs matching a PHASEB_CONTENT_DELTAS class, which MUST
+    #   diverge exactly as declared. A divergence is classified by CAUSE (class predicate +
+    #   exact NEW behaviour), not by label — fuzz inputs that happen to land in a declared
+    #   class are recognised as legitimate, any divergence outside every declared class is an
+    #   unexpected regression, and a declared class that never occurs (or a named exemplar
+    #   that stays oracle-identical) is a self-describing STALE-DECLARATION failure.
+    content_pass = 0; content_fail = []; declared_div = []; named_fired = []; slow = []
+    for label, text, dclass in all_content:
         r = compare_content(text)
         if r["dt"] >= 2.0:
             slow.append((label, r["dt"]))
         if r["equiv"]:
-            if phase == "B" and isB2:
-                content_fail.append((label, "named class-2 case did NOT diverge (fix ineffective)"))
+            if phase == "B" and dclass is not None:
+                reason = PHASEB_CONTENT_DELTAS.get(dclass, {}).get("reason", "unregistered class")
+                content_fail.append((label, f"named exemplar of declared delta class {dclass!r} "
+                                            f"did NOT diverge ({reason}) — stale declaration or "
+                                            f"ineffective engine change"))
             else:
                 content_pass += 1
         else:                                            # diverged
-            legit = (phase == "B" and is_class2(text)
-                     and set(r["n_failed"]) == {"C00"} and r["n_code"] == 1)
-            if legit:
+            cls = _match_content_delta(text, r) if phase == "B" else None
+            if cls is not None:
                 content_pass += 1
-                declared_div.append(label)
-                if isB2:
-                    named_b2.append((label, sorted(r["o_failed"]), sorted(r["n_failed"])))
+                declared_div.append((label, cls))
+                if dclass == cls:
+                    named_fired.append((label, cls, sorted(r["o_failed"]), sorted(r["n_failed"])))
             else:
                 content_fail.append((label, "DIVERGED(unexpected): " + "; ".join(r["diffs"])[:160]))
+
+    if phase == "B":                                     # a declared class that never fired is stale
+        fired = {cls for _l, cls in declared_div}
+        for name, spec in sorted(PHASEB_CONTENT_DELTAS.items()):
+            if name not in fired:
+                content_fail.append((f"delta:{name}",
+                                     f"declared content delta class {name!r} never occurred on "
+                                     f"any corpus input ({spec['reason']}) — stale declaration"))
 
     out(f"CONTENT+FUZZ equivalence: {content_pass}/{len(all_content)} as-expected "
         f"({len(content)} structured + {len(fuzz)} fuzz)")
     if phase == "B":
-        out(f"  Phase-B declared class-2 divergences (non-Mapping layer1_data -> clean {{C00}}): "
-            f"{len(declared_div)} input(s)")
-        for label, of, nf in named_b2:
-            out(f"    [OK] {label}: oracle_failed={of} -> new_failed={nf} (clean C00)")
+        if PHASEB_CONTENT_DELTAS or PHASEB_FILE_DELTAS:
+            out(f"  Phase-B declared deltas: content classes {sorted(PHASEB_CONTENT_DELTAS)} + "
+                f"file labels {sorted(PHASEB_FILE_DELTAS)}; {len(declared_div)} legitimate "
+                f"divergence(s) matched")
+            for label, cls, of, nf in named_fired:
+                out(f"    [OK] {label}: class {cls!r} oracle_failed={of} -> new_failed={nf}")
+        else:
+            out("  Phase-B declared deltas: NONE (registry empty) — every input is required to "
+                "be oracle-identical, so Phase B is behaviourally equivalent to Phase A for "
+                "this engine pair (the 869drd6uy split is a pure refactor; oracle a87ce510 "
+                "already contains the class-2 and clean-nonutf8 fixes).")
     for label, detail in content_fail:
         out(f"  [DIVERGED] {label}: {detail}")
 
@@ -887,11 +1030,12 @@ def run_harness(phase, fuzz_n=1100, k_determinism=3):
 
     # ---- overall gate ----
     out("")
-    gate_ok = (det_ok and not content_fail and not fi_fail and not slow)
+    gate_ok = (det_ok and not cfg_errs and not content_fail and not fi_fail and not slow)
     # property double-breach flags are NOT equivalence failures, but they DO block ratification
     # of that specific input (reported separately); they do not fail the equivalence gate here.
     out(f"OVERALL Phase {phase}: {'PASS' if gate_ok else 'FAIL'}  "
-        f"(determinism={det_ok}, content_fail={len(content_fail)}, file/infra_fail={len(fi_fail)}, "
+        f"(determinism={det_ok}, registry_config_errors={len(cfg_errs)}, "
+        f"content_fail={len(content_fail)}, file/infra_fail={len(fi_fail)}, "
         f"slow={len(slow)}, property_flags={len(flags)})")
     print("\n".join(log))
     return 0 if gate_ok else 1
