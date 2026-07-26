@@ -1,0 +1,190 @@
+SELF-TEST (HERMETIC — sha1-pinned baseline.md, v3.7 / etag-16 snapshot)
+  baseline bytes: 48992
+  manifest tier : personal (v1.1 schema hook, 869drd6uy)
+
+  [OK] frozen baseline lints clean (13/13 checks + tripwire)
+
+  [OK] FX01-unquoted-id: ClickUp teams_space id written without quotes
+           expected to FAIL exactly ['C01'] -> failed=['C01'] == expected
+  [OK] FX02-orphan-prose-id: a Box ID cited in prose that is absent from the YAML
+           expected to FAIL exactly ['C02'] -> failed=['C02'] == expected
+  [OK] FX03-writable-in-neverwrite: writable_baseline folder id collides with a never-write id
+           expected to FAIL exactly ['C03', 'C10'] -> failed=['C03', 'C10'] == expected
+  [OK] FX04-precedence-scrambled: first two precedence tiers swapped
+           expected to FAIL exactly ['C04'] -> failed=['C04'] == expected
+  [OK] FX05-failsafe-false: failsafe no longer overrides the ceilings
+           expected to FAIL exactly ['C05'] -> failed=['C05'] == expected
+  [OK] FX06-mutability-overlap: 'rules' listed as both editable and immutable
+           expected to FAIL exactly ['C06'] -> failed=['C06'] == expected
+  [OK] FX07-jr-uuid-consent-class: a consent_gated (JR) field id set to a valid LONGID that is NOT a UUID — exercises C07's UUID-validity branch on a NON-allow_list class (complements FX28's allow_list case). C01 does NOT fire (a longid is a valid quoted-id string); C02 does NOT fire (v4.4: the de-bloat removed the (JR)-FIELD-RULE prose that cited d8fbed5d, so it now lives ONLY in the YAML data block — displacing it orphans no prose ref; was {C02,C07} on the v4.3 baseline)
+           expected to FAIL exactly ['C07'] -> failed=['C07'] == expected
+  [OK] FX08-bad-sha1-pin: GATE-V sha1 pin (YAML pointed_to_docs.gate_v) replaced with a non-hex value
+           expected to FAIL exactly ['C08'] -> failed=['C08'] == expected
+  [OK] FX10-comment-spoof: an active never_write id deleted from the data, left only in a YAML # comment + prose (v4.3 re-anchor: 367428637440 abandoned — it is now ALSO cited in box.warning, so it stays in the parsed YAML pool and no longer trips C02; the governance-folder id 370218784710 is cited only in its never_write entry + the prose enumeration, so the comment-spoof still trips exactly C02+C10)
+           expected to FAIL exactly ['C02', 'C10'] -> failed=['C02', 'C10'] == expected
+  [OK] FX11-placeholder-TBD: the Rules pointed-to Box ref degraded to a malformed 'TBD'
+           expected to FAIL exactly ['C08'] -> failed=['C08'] == expected
+  [OK] FX13-neverwrite-category-bypass: root-of-trust moved from never_write to writable (prose still says DO-NOT-TOUCH); C03 still passes, only C10 catches it
+           expected to FAIL exactly ['C10'] -> failed=['C10'] == expected
+  [OK] FX14-dropzone-in-writable: Uploads drop-zone id ALSO listed in writable_baseline (overlap); C03 misses it, C11 catches the clash
+           expected to FAIL exactly ['C11'] -> failed=['C11'] == expected
+  [OK] FX15-dropzone-relocation: Uploads drop-zone MOVED out of drop_zones and into writable (sets stay disjoint); only the C11 floor catches it
+           expected to FAIL exactly ['C11'] -> failed=['C11'] == expected
+  [OK] FX16-string-coercion: a root-of-trust id placed in writable_baseline as a BARE STRING (the id-extractor would skip it, blinding C03/C10)
+           expected to FAIL exactly ['C12'] -> failed=['C12'] == expected
+  [OK] FX17-null-zone: the writable_baseline zone emptied to null (would crash a naive loop); C12 reports it as a clean FAIL
+           expected to FAIL exactly ['C12'] -> failed=['C12'] == expected
+  [OK] FX18-dropzone-full-rw-scalar: a create-only drop-zone entry injected with scalar auth: full_rw
+           expected to FAIL exactly ['C11'] -> failed=['C11'] == expected
+  [OK] FX19-dropzone-full-rw-list: a create-only drop-zone entry with auth WRAPPED IN A LIST [full_rw] — evaded the scalar-only C11 check
+           expected to FAIL exactly ['C11'] -> failed=['C11'] == expected
+  [OK] FX20-primitive-zone: the writable_baseline zone replaced by a non-list mapping — must be a clean C12 FAIL, never a TypeError crash
+           expected to FAIL exactly ['C12'] -> failed=['C12'] == expected
+  [OK] FX21-unhashable-id: a writable_baseline entry whose id is an unhashable list (id: [123]) — must be a clean C12 FAIL, never a crash
+           expected to FAIL exactly ['C01', 'C12'] -> failed=['C01', 'C12'] == expected
+  [OK] FX22-context-thresholds-block-dropped: the entire top-level context_thresholds: block removed (accidental block drop); every .get() returns {} so all other checks pass blind — only C13 catches the missing subsystem
+           expected to FAIL exactly ['C13'] -> failed=['C13'] == expected
+  [OK] FX23-threshold-placeholder: single_file_kb left as the unresolved string placeholder "[JR-CONFIRM]" instead of an int
+           expected to FAIL exactly ['C13'] -> failed=['C13'] == expected
+  [OK] FX24-no-yaml-fence: the ```yaml data-block fence removed entirely — split_doc finds no data block; must be a clean single C00 FAIL (this is what previously crashed the --json feed)
+           expected to FAIL exactly ['C00'] -> failed=['C00'] == expected
+  [OK] FX25-yaml-missing-layer1_data: a ```yaml block that parses but has no top-level layer1_data key — must be a clean single C00 FAIL
+           expected to FAIL exactly ['C00'] -> failed=['C00'] == expected
+  [OK] FX26-prose-neverwrite-gap: the prose ABSOLUTE NEVER-WRITE section names a Box ID (the OI folder) that has been removed from the YAML never_write zone — the new C10 prose-consistency augment catches the drift
+           expected to FAIL exactly ['C02', 'C10'] -> failed=['C02', 'C10'] == expected
+  [OK] FX27-c04-prose-anchor: YAML precedence stays canonical but a prose PRECEDENCE numbered tier loses its expected anchor word ('Failsafe' -> 'Backup') — exercises C04's prose-anchor branch (not the YAML branch)
+           expected to FAIL exactly ['C04'] -> failed=['C04'] == expected
+  [OK] FX28-c07-uuid-branch: an allow_list (JR) field id corrupted to a non-UUID non-longid string — exercises C07's UUID-validity branch on jr_field_rule.allow_list. Collateral: C01 (a non-longid/non-UUID 'id' value fails the quoted-id check). C02 does NOT fire (v4.4: the de-bloat removed the (JR)-FIELD-RULE prose that cited 44fe150b, so it now lives ONLY in the YAML data block — removing it orphans no prose ref; was {C01,C02,C07} on the v4.3 baseline)
+           expected to FAIL exactly ['C01', 'C07'] -> failed=['C01', 'C07'] == expected
+  [OK] FX29-c08-pending-ok: NEGATIVE/branch: the Rules pointed-to ref is a BLANK-style PENDING placeholder '<fill>' (a legitimate draft state) — C08 must classify it PENDING and NOT fail; whole pointer stays clean
+           expected to stay clean -> failed=[] == expected
+  [OK] FX30-c08-section-missing: the entire 'Pointed-to docs' prose block is renamed so C08 finds no section — every prose ref classifies MISSING; exercises C08's section-not-found branch
+           expected to FAIL exactly ['C08'] -> failed=['C08'] == expected
+  [OK] FX31-c01-list-branch: a production_spaces.ids list element written unquoted (int-coerced) — exercises C01's 'ids/bases list must be strings' branch
+           expected to FAIL exactly ['C01'] -> failed=['C01'] == expected
+  [OK] FX32-c01-int-coercion-nonid-key: an unquoted long-ID under a NON-'id' key (max_claude_space.lists.tasks) is coerced to int — exercises C01's tree-wide int-coercion scan (the v0.2.6 strengthening), which a key=='id' walk alone would miss
+           expected to FAIL exactly ['C01'] -> failed=['C01'] == expected
+  [OK] FX33-c12-absent-key: a whole box zone KEY (never_write) is absent (not null) — exercises C12's 'key absent' branch distinctly from the null-zone branch; C10 also fires (its floor IDs vanish from never_write)
+           expected to FAIL exactly ['C10', 'C12'] -> failed=['C10', 'C12'] == expected
+  [OK] FX35-alias-bomb: the harness's 7-level alias-expansion bomb injected into the data block — bounded loader rejects at the alias budget BEFORE construction; clean single C00 FAIL, no hang
+           expected to FAIL exactly ['C00'] -> failed=['C00'] == expected
+  [OK] FX36-single-alias: even ONE anchor/alias pair trips the zero alias budget (governance YAML is alias-free by construction) — pins the budget=0 semantics so it cannot silently loosen
+           expected to FAIL exactly ['C00'] -> failed=['C00'] == expected
+  [OK] FX37-oversize-yaml-block: a yaml block padded past YAML_MAX_BYTES trips the input-size cap before any parse
+           expected to FAIL exactly ['C00'] -> failed=['C00'] == expected
+  [OK] FX34-crossclass-duplicate: an allow_list entry is INJECTED whose field-id is the never_write JR Status id (f22a77f7) — a field-id cannot live in two classes; C07's class-disjointness invariant catches the contradiction. Injection (not replacement), so no prose-cited id is displaced -> exact set {C07}
+           expected to FAIL exactly ['C07'] -> failed=['C07'] == expected
+  [OK] FXCOV-uncovered-rule: a clause with no mapped check
+           expected coverage tripwire to FAIL -> fired
+  [OK] FXTIER-manifest-tier-enum: tier declaration accepts ['org', 'personal', 'project'] only (fail-closed InitError otherwise)
+           expected accept 3/3 + reject 4/4 -> accepted=3/3, rejected=4/4
+
+  [OK] XF01-clean-set: synthetic Rules/TagUse/charter cite only pointer-held IDs; live sha == pin
+           expected to stay clean -> failed=[] == expected
+  [OK] XF02-rules-alien-id: Rules copy cites a Box ID absent from the pointer data block
+           expected to FAIL exactly ['X01'] -> failed=['X01'] == expected
+  [OK] XF03-charter-alien-uuid: charter copy cites a field UUID the pointer does not hold
+           expected to FAIL exactly ['X01'] -> failed=['X01'] == expected
+  [OK] XF04-pin-drift-pointer-vs-manifest: pointer gate_v.sha1_pin re-pinned away from the manifest record; supplied live sha still == manifest pin, so BOTH halves of the coherence check fire (X02 record drift + X03 live mismatch)
+           expected to FAIL exactly ['X02', 'X03'] -> failed=['X02', 'X03'] == expected
+  [OK] XF05-version-drift: pointer gate_v.version_expected bumped without a manifest re-record
+           expected to FAIL exactly ['X02'] -> failed=['X02'] == expected
+  [OK] XF06-live-sha-mismatch: supplied live GATE-V sha1 differs from the consistent pin (drift/tamper)
+           expected to FAIL exactly ['X03'] -> failed=['X03'] == expected
+  [OK] XF07-gatev-copy-sha-mismatch: supplied gate_v doc copy whose sha1 != pin (byte-drifted copy)
+           expected to FAIL exactly ['X03'] -> failed=['X03'] == expected
+  [OK] XF08-malformed-live-sha: supplied live sha1 is not 40-hex
+           expected to FAIL exactly ['X03'] -> failed=['X03'] == expected
+  [OK] XF09-broken-pointer: xdoc run against an unparseable pointer short-circuits to X00 only
+           expected to FAIL exactly ['X00'] -> failed=['X00'] == expected
+  [OK] XF10-no-inputs: no doc/sha inputs: X00+X02 still run, X01/X03 skip with notes, nothing fails
+           expected to stay clean -> failed=[] == expected
+  [OK] XF11-mirror-clean: mirror copy passes all structural anchors; sha1 == recorded
+           expected to stay clean -> failed=[] == expected
+  [OK] XF12-mirror-anchor-missing: mirror lacking the version marker fails structure (X04) only
+           expected to FAIL exactly ['X04'] -> failed=['X04'] == expected
+  [OK] XF13-mirror-currency-drift: structurally-clean mirror whose sha1 != recorded (X05 only)
+           expected to FAIL exactly ['X05'] -> failed=['X05'] == expected
+  [OK] XF14-mirror-no-record: mirror supplied but manifest has no record: X04 runs, X05 skips (flag)
+           expected to stay clean -> failed=[] == expected
+  [OK] XF15-mirror-live-sha-drift: live mirror sha1 supplied (no copy): X04 skips, X05 fails on drift
+           expected to FAIL exactly ['X05'] -> failed=['X05'] == expected
+  [OK] XF16-mirror-record-malformed: record with a non-40-hex sha1_recorded fails X05 closed
+           expected to FAIL exactly ['X05'] -> failed=['X05'] == expected
+  [OK] FXCONF-mirror-no-echo: org-mirror content never appears in xdoc output (structure/sha1 only)
+           expected sentinel absent from all labels/details/notes -> absent
+  [OK] FXXCOV-uncovered-xdoc-rule: an xdoc clause with no mapped check
+           expected xdoc coverage tripwire to FAIL -> fired
+
+  [OK] HF01-clean: marker-free comments + unique CR numbers stay clean
+           expected to stay clean -> failed=[] == expected
+  [OK] HF02-marker-comment: a comment carrying arrow + should markers is flagged (R01)
+           expected to FAIL exactly ['R01'] -> failed=['R01'] == expected
+  [OK] HF03-new-case-sensitivity: lowercase 'new'/'news' must NOT trip the case-sensitive NEW marker
+           expected to stay clean -> failed=[] == expected
+  [OK] HF04-malformed-json: a non-JSON comments dump is a clean R01 FAIL, never a crash
+           expected to FAIL exactly ['R01'] -> failed=['R01'] == expected
+  [OK] HF05-shape-error: a comment entry with no text field fails closed (silent skip = coverage hole)
+           expected to FAIL exactly ['R01'] -> failed=['R01'] == expected
+  [OK] HF06-dup-cr: two audit tasks sharing TEAMS-CR-2026-07-01-001 collide (R02)
+           expected to FAIL exactly ['R02'] -> failed=['R02'] == expected
+  [OK] HF07-same-task-repeat: the SAME task citing its own CR twice is not a collision
+           expected to stay clean -> failed=[] == expected
+  [OK] HF08-audit-top-level: an audit dump whose top level is a dict (not list) fails R02 closed
+           expected to FAIL exactly ['R02'] -> failed=['R02'] == expected
+  [OK] HF09-both-offend: offending comments AND a CR collision fail both checks
+           expected to FAIL exactly ['R01', 'R02'] -> failed=['R01', 'R02'] == expected
+  [OK] HF10-no-dumps: no dumps supplied: both checks skip with notes, nothing fails
+           expected to stay clean -> failed=[] == expected
+  [OK] FXHCOV-uncovered-hygiene-rule: a hygiene clause with no mapped check
+           expected hygiene coverage tripwire to FAIL -> fired
+
+  [OK] DH01-clean-set: versioned+logged docs, correct claims, no re-introduced authority
+           expected to stay clean -> failed=[] == expected
+  [OK] DH02-silent-bump: rules header bumped v2.3->v2.4 with no matching change-log entry
+           expected to FAIL exactly ['H01'] -> failed=['H01'] == expected
+  [OK] DH03-no-changelog: tag_use with its change-log section renamed away
+           expected to FAIL exactly ['H01'] -> failed=['H01'] == expected
+  [OK] DH04-editable-claims-immutable: rules claiming immutable while the pointer lists it editable
+           expected to FAIL exactly ['H02'] -> failed=['H02'] == expected
+  [OK] DH05-gatev-claims-editable: a gate_v copy claiming Cowork-editable (floored immutable)
+           expected to FAIL exactly ['H02'] -> failed=['H02'] == expected
+  [OK] DH06-ceiling-reintro: rules re-introducing a ceiling-shaped allow-list (id + auth grant)
+           expected to FAIL exactly ['H03'] -> failed=['H03'] == expected
+  [OK] DH07-precedence-scrambled: rules restating precedence with failsafe BEFORE safety
+           expected to FAIL exactly ['H03'] -> failed=['H03'] == expected
+  [OK] DH08-charter-threshold-def: charter defining a context threshold value
+           expected to FAIL exactly ['H04'] -> failed=['H04'] == expected
+  [OK] DH09-charter-neverwrite-enum: charter enumerating a never-write id
+           expected to FAIL exactly ['H04'] -> failed=['H04'] == expected
+  [OK] DH10-project-pointer-grant: project pointer carrying an id + auth-grant line
+           expected to FAIL exactly ['H04'] -> failed=['H04'] == expected
+  [OK] DH11-reference-not-definition: charter MENTIONING ceiling/never-write words without ids/values stays clean
+           expected to stay clean -> failed=[] == expected
+  [OK] DH12-no-docs: no hygiene-scoped docs supplied: all four checks skip with notes
+           expected to stay clean -> failed=[] == expected
+  [OK] FXDCOV-uncovered-dochygiene-rule: a doc-hygiene clause with no mapped check
+           expected doc-hygiene coverage tripwire to FAIL -> fired
+
+  [OK] PN01-all-current: live shas for all four artifacts match the recorded values
+           expected to stay clean -> failed=[] == expected
+  [OK] PN02-baseline-stale: live deployed-pointer sha1 differs from BASELINE_SHA1 (the v3.7 stale-baseline incident class)
+           expected to FAIL exactly ['P01'] -> failed=['P01'] == expected
+  [OK] PN03-registry-pin-tamper: live scope-registry sha1 differs from the pointer-recorded pin
+           expected to FAIL exactly ['P02'] -> failed=['P02'] == expected
+  [OK] PN04-airlock-pin-drift: live airlock.py sha1 (M1 host file) differs from the recorded pin
+           expected to FAIL exactly ['P02'] -> failed=['P02'] == expected
+  [OK] PN05-malformed-live: a malformed deployed-pointer sha1 fails P01 closed
+           expected to FAIL exactly ['P01'] -> failed=['P01'] == expected
+  [OK] PN06-gatev-in-sweep: gate_v live sha joins the P02 sweep too (cross-linked with X03, not merged)
+           expected to FAIL exactly ['P02'] -> failed=['P02'] == expected
+  [OK] PN07-broken-pointer: P02 fails closed when the pointer is unparseable (recorded pins unavailable)
+           expected to FAIL exactly ['P02'] -> failed=['P02'] == expected
+  [OK] PN08-no-shas: family invoked with no live shas: both checks skip with notes, nothing fails
+           expected to stay clean -> failed=[] == expected
+  [OK] PN09-gatev-nondict: pointed_to_docs.gate_v is a list: P02 fails cleanly, no AttributeError
+           expected to FAIL exactly ['P02'] -> failed=['P02'] == expected
+  [OK] FXPCOV-uncovered-pin-rule: a pin clause with no mapped check
+           expected pin coverage tripwire to FAIL -> fired
+
+SELF-TEST RESULT: 89/89 fixtures correct (exact failing-set match); baseline clean -> PASS

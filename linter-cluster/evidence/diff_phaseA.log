@@ -1,0 +1,26 @@
+DIFFERENTIAL HARNESS — Phase A
+  python(oracle)=python(new)=3.11.15  (version parity: True)
+  ORACLE sha1 pin check: a87ce5101fe82ff10af67e4dc0b24c9771c0e6f7
+
+DETERMINISM: content corpus run K=3x -> STABLE (identical run-to-run)
+CONTENT+FUZZ equivalence: 1151/1151 as-expected (51 structured + 1100 fuzz)
+
+FILE / CRASH / INFRA cases:
+  [OK] file:nonutf8[text]: identical  
+  [OK] file:nonutf8[json]: identical  
+  [OK] file:isadir[text]: identical  
+  [OK] file:isadir[json]: identical  
+  [OK] file:perm[text]: identical  
+  [OK] file:perm[json]: identical  
+  [OK] infra:manifest-deleted: exit3+INIT-FAILURE  | INIT-FAILURE: engine package 'l1lint' not importable beside layer1_lint.py (ModuleNotFoundError: No module named 'l1lint') - incomplete installation; the modula
+  [OK] infra:manifest-chmod000: exit3+INIT-FAILURE  | INIT-FAILURE: engine package 'l1lint' not importable beside layer1_lint.py (ModuleNotFoundError: No module named 'l1lint') - incomplete installation; the modula
+  [OK] infra:baseline-sha1-corrupt: exit3+INIT-FAILURE  | INIT-FAILURE: engine package 'l1lint' not importable beside layer1_lint.py (ModuleNotFoundError: No module named 'l1lint') - incomplete installation; the modula
+  [OK] infra:baseline-crlf-rewrite: exit3+INIT-FAILURE  | INIT-FAILURE: engine package 'l1lint' not importable beside layer1_lint.py (ModuleNotFoundError: No module named 'l1lint') - incomplete installation; the modula
+
+PROPERTY BOUNDS (F6 — wall_time < 2 s):
+  5MB-garbage[oracle]: 9 ms  ok
+  5MB-garbage[new]: 6 ms  ok
+  alias-bomb[oracle]: 94 ms  ok
+  alias-bomb[new]: 65 ms  ok
+
+OVERALL Phase A: PASS  (determinism=True, content_fail=0, file/infra_fail=0, slow=0, property_flags=0)

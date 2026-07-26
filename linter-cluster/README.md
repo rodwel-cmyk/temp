@@ -14,3 +14,22 @@ Gates: python3 linter-cluster/layer1_lint.py --selftest -> 89/89 PASS exit 0.
 REV1 (2026-07-25): item 07 revised per Gemini Finding 1 — non-dict pointed_to_docs.gate_v
 no longer crashes the P02 recorded-pin lookup (clean FAIL) + fixture PN09; diffs/item7.diff updated.
 DRAFT + LOCAL-VERIFY ONLY: nothing here is applied to any governed substrate; Gemini review + GATE-V application are downstream.
+
+## 869drd6uy tier-engine modular split (2026-07-26)
+
+The engine now ships as an entrypoint shim + the `l1lint/` package (verbatim-slice split of
+the a87ce510 monolith; the monolith's bytes are preserved as `oracle_layer1_lint.py`).
+Invocation unchanged: `python3 linter-cluster/layer1_lint.py --selftest` -> 89/89 PASS exit 0.
+
+Verify: shasum linter-cluster/layer1_lint.py linter-cluster/l1lint/* (full table incl.
+per-module monolith line-ranges: MODULE-MAP.md; machine-readable: split_ledger.json;
+review evidence: REVIEW-FEED.md + evidence/).
+- oracle_layer1_lint.py  a87ce5101fe82ff10af67e4dc0b24c9771c0e6f7 (107222 B, frozen monolith)
+- test_layer1_lint.py / manifest.yaml / baseline.md unchanged (hashes above).
+
+Gates: --selftest 89/89 (stdout+stderr byte-identical to the oracle) AND the full Phase-A
+oracle differential — `python3 linter-cluster/test_layer1_lint.py --phase A` -> OVERALL
+Phase A: PASS (1151/1151 content+fuzz as-expected, determinism K=3 STABLE, zero deltas
+declared; transcript: evidence/diff_phaseA.log).
+DRAFT + LOCAL-VERIFY ONLY: nothing here is applied to any governed substrate; Gemini review
++ GATE-V application are downstream.
