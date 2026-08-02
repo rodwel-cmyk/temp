@@ -1,4 +1,4 @@
-# STEP3-PACKAGE-AUDIT — independent audit of the fix-run step-3 review package — v1.0 2026-08-01
+# STEP3-PACKAGE-AUDIT — independent audit of the fix-run step-3 review package — v1.1 2026-08-01
 
 **Authority: NONE.** An audit record. It changes nothing, clears nothing, and authorises nothing.
 Output returns to the Level 1 project for review; nothing acts on it until then.
@@ -15,7 +15,8 @@ Opus-class). **Processing Model Standard: the Opus-class-or-higher requirement i
 
 **Writes made by this session: ZERO to Box, ZERO to ClickUp** (no ClickUp tooling was even
 attached). Every Box call was a read (list, search, metadata, content). The only writes are this
-file and its companion draft, committed to the git branch above.
+file and its companion draft, committed to the git branch above and emitted as hash-verifiable
+text back to the Level 1 session.
 
 ---
 
@@ -31,9 +32,13 @@ Everything this audit knows about the tasking therefore comes from the task mess
 restatement (marked `U-RELAY` below): two tasks in order (this audit, then the step-4 governing
 draft); AUTHORITY NONE — read and draft only, no Box or ClickUp writes of any kind; a parallel
 Teams Code job writing to both today; the Opus-class-or-higher confirmation; and the rule that no
-hash, size, version or content is stated as fact unless read this session. **If the brief carries
-requirements beyond that relay, this session has not seen them and cannot claim compliance with
-them.**
+hash, size, version or content is stated as fact unless read this session. **A follow-up relay
+later the same session supplied three further brief requirements absent from the first relay**
+[U-RELAY]: emission of both deliverables as hash-verifiable text (a git branch this project
+cannot reach is a document nobody downstream can read); the verdict in the fixed form
+SEND / SEND WITH NAMED CHANGES / DO NOT SEND (§9); and two named findings, ruled on here as F8
+and F9. **If the brief carries requirements beyond these two relays, this session has not seen
+them and cannot claim compliance with them.**
 
 ---
 
@@ -189,14 +194,15 @@ FIX-RUN-REPORT §5 [U-DOC]:
    `DEMO-DRIVER-DIFF-STATEMENT-v1.0-2026-07-30.md` `e5fee309…`/5,855 B [all U-DOC — these
    artefacts are local to the executor's host and NOT visible from this seat]. The two driver
    entries agree (both UNCHANGED), satisfying the card's step 4 and the declaration's D4(5).
-   AGREE, contingent on the artefacts.
+   AGREE, contingent on the artefacts. **See F9 for the seam in how the UNCHANGED statement
+   physically travels.**
 3. **Known-value agreement across instruments.** Pre-fix harness `3574c2d1…`/92,385 B: identical
    in RUN-CARD "FILES" and steps 2, 03 §2 KNOWN NOW, and 03 §3 names table. Template identity
    `22b0422e…`/4,094 B / header v1.4 (2026-07-27) / Box `2368457077961` / Box version counter 5:
    identical across RUN-CARD, 03 §2, 03b D2(b)'s duality note, and state-cache §5. Frozen oracle
    `a87ce510…`/107,222 B / Box `2367835811909`: identical across 03 §2 and FIX-RUN-REPORT — and
    confirmed against local bytes (section 4). Demo driver prefix `2651b859`/18,586 B: identical
-   across 03 §2, brief §8, report §5. AGREE throughout; no value collision found.
+   across 03 §2, brief §8, report §5 (see F8). AGREE throughout; no value collision found.
 4. **The declaration's no-expected-values design holds.** 03b repeats none of §2's identities
    (checked by reading both); expected values live only in the 03 file's §2, as both documents
    claim. AGREE.
@@ -323,17 +329,92 @@ re-placed upstream [U-DOC], and the surviving copy's hash agrees with all record
 computations (section 4). JR's ratification remains outstanding — this audit adds evidence, not
 authority.
 
+**F8 (LOW — ruled on relay from the brief; the driver identity is a prefix where exact was
+available).** The 03 prompt's §2 declares itself "the SINGLE home of every expected identity in
+this run", yet its KNOWN NOW block records the demo driver as "sha1 prefix 2651b859, 18,586
+bytes" — and the declaration's D4(3) cross-checks the rationale's stated pre-edit driver hash
+against that entry, so a check that could be exact is approximate. RULING: real, LOW, and NOT an
+authoring defect — §2's KNOWN NOW block is expressly "(recorded before the fix run)", and at
+package-authoring time only the prefix existed in any record [U-DOC state-cache §5 "Still only a
+prefix"]. The full value `2651b8598cfb3af87c8ec0d9bbc7c783a1987f9b` / 18,586 B was first
+established at the fix run's staging gate [U-DOC report §5; the follow-up relay quotes the same
+value — U-RELAY, agreeing; this seat cannot see the driver file itself]. The exposure is bounded
+three ways: the run-time driver slot itself demands "UNCHANGED followed by its unchanged full
+sha1", so the COMPLETED §2 puts the full 40-hex before the reviewer and D4(5) ties the two
+driver entries together; prefix-AND-byte-count is the brief's own two-factor placeholder
+discipline (§4: "Both must match; one alone is not sufficient"); and byte-level verification is
+the OPERATOR's shell duty (RUN-CARD step 2, against the fix-run report's full values), not the
+reviewer's — the reviewer cannot compute hashes at all. RESIDUAL: D4(3) as written compares
+against an 8-hex (32-bit) entry where 160 bits were available — a document-consistency check
+narrower than it needed to be, sitting downstream of the operator's full-hash gate. TREATED by
+named change NC2 (§9), without touching either pinned instrument.
+
+**F9 (MEDIUM — ruled on relay from the brief; the X5 dependency is real, and it has no slot).**
+Disapplication X5 halts the review (standing rule 7) unless message 5 physically carries a
+driver diff OR "the explicit statement that the driver is UNCHANGED **(with its hash)**". Two
+seams found on inspection [V-READ of card and prompt]:
+(i) the RUN-CARD's own step 4 prepares a TYPED LINE — "DRIVER UNCHANGED — no driver diff exists
+for this run" — which carries NO hash. An assembly following the card literally therefore sends
+a statement missing the one attribute X5 parenthesises, inviting a halt on a strict reading (and
+a halt costs a full round; the reviewer is REQUIRED to stop rather than proceed).
+(ii) the durable with-hash form EXISTS — `DEMO-DRIVER-DIFF-STATEMENT-v1.0-2026-07-30.md`,
+`e5fee309314ae767fb77c38df686cf240241ee02`, 5,855 B, created by launch OVERRIDE 3 for exactly
+this purpose ("an explicit UNCHANGED statement, WITH its sha1") [U-DOC; the follow-up relay
+quotes the same identity — U-RELAY, agreeing] — but NO §2 slot, no RUN-CARD FILES row, and no
+send-step names that document, so nothing in the package itself ensures it travels.
+RULING: the dependency must be carried EXPLICITLY, and by RELAY CARD rather than by editing the
+package. Editing the card or prompt would change pinned identities that three records already
+carry (report §6, launch OVERRIDE 1, transport JOB), would reopen the review clock on cleared
+instruments, and would re-run the exact text-parameter upload route that corrupted the
+declaration once already — all to add one sentence. The house mechanism for corrections to
+cleared instruments is the override/relay card (precedent: STEP1-LAUNCH overriding the cleared
+brief). A relay note is sufficient ONLY as a durable, hash-recorded artefact handed WITH the
+package — a chat-transcript note is not; instructions that live only in transcripts are the
+failure class the brief's §0 records a Tier-2 audit catching. IMPLEMENTED as named change NC1
+(§9).
+
 ---
 
-## 9. BOTTOM LINE
+## 9. VERDICT — in the form the brief requires
 
-The step-3 package as staged is **internally consistent, identity-verified as far as this seat
-can reach, and ready for assembly by an operator with main-account visibility.** Nothing found
-here blocks step 3. The blockers that DO exist are the ones the records already name: the
-operator-side preconditions (RUN-CARD P1–P3, template/04 reachability, stale-template removal
-confirmation) and, downstream of step 3, the gates before step 4 (JR's read of the brief — still
-NOT CONFIRMED per the report [U-DOC] — the ratifications, and the ≥64 KB transport ruling).
-Companion document: `STEP4-GOVERNING-DOC-DRAFT-v0.1-2026-08-01.md`, same branch, same session.
+**VERDICT: SEND WITH NAMED CHANGES.**
 
-*Change log: v1.0 2026-08-01 — first issue. Produced read-only; not adversarially reviewed;*
-*returns to Level 1 for review.*
+The package as staged — the three pinned instruments plus the RUN-CARD assembly procedure — is
+internally consistent, identity-verified as far as this seat can reach, and correctly implements
+every correction handed forward from the fix run. **No finding requires editing any pinned
+instrument; instrument identities (`d3cf5a3a…`, `5ed8de23…`, `097d42fb…`) are unchanged by all
+three named changes.** The changes attach to the SEND — a small step-3 relay card (authority
+NONE, ≤2 KB, its own sha1 recorded in the send report), the same mechanism the step-1 launch
+prompt used on the cleared brief:
+
+```
+NC1  (from F9, MEDIUM)  Message 5's driver element is the eighth deliverable
+     DEMO-DRIVER-DIFF-STATEMENT-v1.0-2026-07-30.md (e5fee309…, 5,855 B [U-DOC]), pasted under
+     the message-5 heading in the position the RUN-CARD's step 4 gives the typed line, which it
+     SUPERSEDES. Fallback if JR prefers the typed line: the line gains the driver's full sha1,
+     so X5's "(with its hash)" is satisfied either way. The relay card also confirms, per D5,
+     that message 5's items are listed individually.
+NC2  (from F8, LOW)     When filling the driver slot, fill the FULL 40-hex
+     (2651b8598cfb3af87c8ec0d9bbc7c783a1987f9b — as the slot text already demands), and at
+     RUN-CARD step 2 verify the rationale's stated pre-edit driver hash against that full value
+     from the fix-run report, closing D4(3)'s prefix-width residual outside the reviewer.
+NC3  (from F1)          Before opening the session: confirm reachability of the seven
+     externally-sourced inputs, and confirm the stale 3,029-byte template's removal from the
+     working folder (RUN-CARD P3) — neither is checkable from this seat.
+```
+
+If the named changes cannot accompany the send as a durable artefact, the verdict degrades to
+**DO NOT SEND** until they can: the failure they prevent — a rule-7 halt or an
+unverifiable-driver round at step 3 — costs a full review round against a reviewer that is
+required to stop.
+
+Nothing found here blocks step 3 beyond the above. The gates that DO sit downstream are the ones
+the records already name: JR's read of the brief (still NOT CONFIRMED per the report [U-DOC]),
+the ratifications, and the ≥64 KB transport ruling — all ahead of step 4, per the companion
+`STEP4-GOVERNING-DOC-DRAFT-v0.2-2026-08-01.md` (same branch, same session).
+
+*Change log: v1.0 2026-08-01 — first issue, produced read-only. v1.1 same day — added §9 verdict*
+*in the required SEND / SEND WITH NAMED CHANGES / DO NOT SEND form, and findings F8/F9 with*
+*rulings; all three requirements arrived by follow-up relay from the (still unreadable) brief.*
+*Supersedes v1.0 whole; v1.0 remains at git commit 0a2b0d0. Not adversarially reviewed; returns*
+*to Level 1 for review.*

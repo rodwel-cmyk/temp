@@ -1,6 +1,6 @@
-# STEP4-GOVERNING-DOC — DRAFT — apply the fix run under GATE-V — v0.1 2026-08-01
+# STEP4-GOVERNING-DOC — DRAFT — apply the fix run under GATE-V — v0.2 2026-08-01
 
-**STATUS: DRAFT v0.1 — NOT REVIEWED, NOT CLEARED, NOT LAUNCHABLE.** Under the standing rule of
+**STATUS: DRAFT v0.2 — NOT REVIEWED, NOT CLEARED, NOT LAUNCHABLE.** Under the standing rule of
 2026-07-27 this document requires independent adversarial review before staging, sharing or
 launch — it has had none. Its criteria were authored by the seat that wrote it (the
 seat-authored-criteria weakness that rule exists to catch). It also requires **JR's confirmed
@@ -15,7 +15,7 @@ value below is a prior record's claim unless marked verified; section 12 keys ev
 **Drafting seat.** Claude Code remote session on model `claude-fable-5` (Claude 5 family,
 Mythos-class tier above Opus-class; Processing Model Standard satisfied), Box-visible only as
 the Max account (`rodwel@me.com`) — see the companion
-`STEP3-PACKAGE-AUDIT-v1.0-2026-08-01.md` for that seat's visibility limits. The drafting seat
+`STEP3-PACKAGE-AUDIT-v1.1-2026-08-01.md` for that seat's visibility limits. The drafting seat
 could NOT read the tasking brief `MAX-SESSION-BRIEF-audit-and-step4-governing-doc-2026-08-01.md`
 (Mac-local; not visible from the container) and worked from the task message's relay of its
 constraints. **NOT the executor.** The executor of step 4 is the **Teams Code-CLI seat**.
@@ -65,13 +65,43 @@ changes**: not the engine shim, not the 12 `l1lint` modules, not `manifest.yaml`
 `2651b859…` [U-DOC]) and is not governed tooling. Any need to write a second object is a scope
 change: **HALT and ask JR.**
 
-**The subtle expectation an operator must not trip over.** The governed harness currently holds
-the OLD staged v6 bytes — expected `a3e678f2…` / 64,501 B [U-DOC state-cache §5] — because the
-REVISED harness (`3574c2d1…` / 92,385 B) only ever lived in build-outputs and was never applied.
-Step 4 therefore moves the governed object **directly from `a3e678f2…` to the FIXED
-`63804b9c…`**, the composition of two reviewed deltas (build diff + fix diff). An operator
-expecting to find `3574c2d1…` live in the governed folder would wrongly cry tamper: the pre-write
-assert in S6 uses `a3e678f2…`, and this paragraph is why.
+### THE APPLY MODE — WHOLE-FILE VERSION-REPLACE. THE SUBSTRATE IS NOT AT THE FIX DIFF'S BASE.
+
+This block sits ahead of the preconditions deliberately: it defines what the apply IS. The
+preconditions (§2) gate whether it may run.
+
+**The fact, stated plainly: the copy in the governed folder is the STAGED harness, not the
+PRE-FIX harness.** The governed object `2296699168749` is expected to hold `a3e678f2…` /
+64,501 B — brief §4's own row calls it "staged harness v6 … reference only; NOT the base", the
+state cache (§5) records the same identity, and the fix run wrote nothing to governed
+[all U-DOC; this seat cannot see the object]. The fix diff's base — the PRE-FIX / revised
+harness `3574c2d1…` / 92,385 B — exists only in build-outputs (Box `2373463499360`) and in
+staging trees. **It has never been in the governed folder.**
+
+Four consequences, spelled out so no operator has to derive them at apply time:
+
+```
+1  THE FIX DIFF CANNOT BE PATCH-APPLIED TO THE GOVERNED OBJECT. The governed bytes are not at
+   the diff's base and never were. Any patch-mode tool that pins a base of 3574c2d1… will
+   (correctly) refuse against the governed object. That refusal is fail-closed behaviour
+   WORKING — and the WRONG remedy is "fixing" it by first uploading the base (see 3).
+2  STEP 4 IS THEREFORE A WHOLE-FILE VERSION-REPLACE of the fixed bytes (63804b9c…), and the
+   diff-base relationship is proven OFF-substrate, before any write: S5(a) requires that
+   applying the fix diff to a staged copy of the pre-fix harness (3574c2d1…) reproduces the
+   fixed harness byte-exactly. The substrate never needs to be at the diff's base, because the
+   diff is never applied to the substrate.
+3  NO INTERVENING APPLY of the revised harness (3574c2d1…) — not as its own step, not as a
+   repair. That intermediate is precisely the state gate (ii) REFUSED to clear standing alone
+   (verdict REVISE, four gated fixes: "leaving the identity unasserted fundamentally breaks
+   the differential's anchoring"). The total governed delta a3e678f2… → 63804b9c… is the
+   COMPOSITION of two reviewed deltas — the authoritative build diff (gate (ii)'s subject) and
+   the fix diff (step 3's subject) — and lineage is preserved by Box version history and the
+   two diffs' annotated headers, not by materialising an un-cleared state on the substrate.
+   One write also means one read-back and one transport exposure instead of two.
+4  S5(d)'s pre-write assert on a3e678f2… is a QUIET-SUBSTRATE check — proof that nobody else
+   has written — NOT a patch-base check. If it fails, someone's write has landed: INTEGRITY,
+   fail-closed lockdown, JR. Never "upload the base and continue".
+```
 
 **Six-step discipline.** Before staging anything, the executor restates all six steps in its own
 words and states that this run performs step 4 only. A restatement that reads "apply → done" or
@@ -93,7 +123,7 @@ P2  JR'S CONFIRMED READS, in writing: (a) of the fix-run brief v2.1 (sha1 7a59e1
     NOT CONFIRMED as of 2026-07-30 and gating exactly this step; (b) of THIS document in its
     reviewed, cleared revision. Neither read is inferable; each is a stated confirmation.
 P3  ADVERSARIAL REVIEW OF THIS DOCUMENT is complete and its verdict recorded, per the standing
-    rule of 2026-07-27. This v0.1 draft fails P3 by construction.
+    rule of 2026-07-27. This v0.2 draft fails P3 by construction.
 P4  JR'S RATIFICATIONS, each recorded: (a) the frozen oracle's full pin
     a87ce5101fe82ff10af67e4dc0b24c9771c0e6f7 / 107,222 B (two independent computations exist —
     Teams seat 2026-07-30 from Box 2367835811909; audit session 2026-08-01 from the git mirror —
@@ -157,16 +187,18 @@ S4  STAGE BYTE-EXACT, outside the Box-sync tree, as non-root (record `id -u`; mu
 S5  FOUR PRE-WRITE PROOFS, each its own line in the report:
     (a) DIFF INTEGRITY: applying the fix diff to the staged pre-fix harness (3574c2d1…)
         reproduces the fixed harness byte-exactly (sha1 63804b9c…, 104,070 B). This re-derives
-        the fix from its reviewed delivery form rather than trusting a carried file.
+        the fix from its reviewed delivery form rather than trusting a carried file. It is the
+        ONLY place the fix diff is ever applied — off-substrate (§1 apply-mode block).
     (b) UNDERSCORE CONTROL: in the RAW fix diff and the staged path lists, every occurrence of
         the l1lint init filename reads as four underscore characters (two + init + two) + .py.
         Any init.py → transport corruption → HALT and re-export; never repair by hand.
     (c) SETPIN ENUMERATION: enumerate the pinned paths from the SETPIN file's own `files`
         object; the count MUST be 16. Anything else → STOP, ask JR.
     (d) GOVERNED PRE-STATE: the live governed harness 2296699168749 still carries the OLD v6
-        bytes — server-side sha1 a3e678f2… / 64,501 B (see §1's trap paragraph). Any other
-        value RESOLVES-AND-DISAGREES → INTEGRITY → fail-closed lockdown per GATE-V: someone or
-        something has already written to the substrate, and step 4 must not stack on it.
+        bytes — server-side sha1 a3e678f2… / 64,501 B (see §1's apply-mode block: this is a
+        quiet-substrate check, not a patch-base check). Any other value RESOLVES-AND-DISAGREES
+        → INTEGRITY → fail-closed lockdown per GATE-V: someone or something has already written
+        to the substrate, and step 4 must not stack on it.
 ```
 
 ---
@@ -265,6 +297,10 @@ N8  Never fill a value this document marks [U-DOC] into the substrate without li
     re-verification at run time; this draft is reference, not authority.
 N9  Anti-auto-recovery, verbatim scope: a refused or failed read/write means HALT and report.
     No guessing, no context-search for an alternative, no substitute target, no nearest match.
+N10 Never patch the governed object in place, and never write the intermediate revised harness
+    (3574c2d1…) to the governed folder — not as its own step, not as a repair for a patch-base
+    refusal. The only bytes step 4 writes are the S5(a)-proven fixed bytes, as one whole-file
+    version-replace (§1 apply-mode block).
 ```
 
 ---
@@ -312,7 +348,7 @@ Q4  Should the step-4 launch prompt re-pin GATE-V/Scope-Registry values itself (
 Q5  Does the near-miss filename gate (869eb7dre) join the workstream BEFORE the apply (state
     cache 0d2 notes the cheapest moment has passed once step 3's package is sent), or wait?
 Q6  Where does this document live once cleared — local only (the ≥64 KB rule does not bind it:
-    it is ~15 KB), Box References, or the exchange folder?
+    it is ~17 KB), Box References, or the exchange folder?
 ```
 
 ---
@@ -328,7 +364,7 @@ precondition. [U-DOC brief §17 — re-verify liveness at the time.]
 
 ## 12. IDENTITY REFERENCE — every value above, with provenance. RE-VERIFY LIVE AT RUN TIME.
 
-Provenance keys as defined in `STEP3-PACKAGE-AUDIT-v1.0-2026-08-01.md` §1 (V-BOXMETA / V-LOCAL /
+Provenance keys as defined in `STEP3-PACKAGE-AUDIT-v1.1-2026-08-01.md` §1 (V-BOXMETA / V-LOCAL /
 V-READ = verified by the drafting session on 2026-08-01; U-DOC = carried claim, unverified).
 
 ```
@@ -354,7 +390,11 @@ closing-write task / catalog    869e9h7ym action 1 / Box 2328644291918          
 ---
 
 *Change log: v0.1 2026-08-01 — first draft, written read-only by the Level 1 audit session*
-*alongside `STEP3-PACKAGE-AUDIT-v1.0-2026-08-01.md`. Sources: fix-run brief v2.1 §§0–17, RUN-CARD*
-*v2.0, 03/03b v2.0 instruments, FIX-RUN-REPORT v1.0, STEP1-LAUNCH overrides, transport/retention*
-*JOB (three clauses), state cache (2026-07-31 New-Inbox copy), DECISIONS-RULINGS 2026-07-17 — all*
-*read 2026-08-01. NOT adversarially reviewed. NOT read-confirmed by JR. Not launchable as v0.1.*
+*alongside the step-3 package audit. Sources: fix-run brief v2.1 §§0–17, RUN-CARD v2.0, 03/03b*
+*v2.0 instruments, FIX-RUN-REPORT v1.0, STEP1-LAUNCH overrides, transport/retention JOB (three*
+*clauses), state cache (2026-07-31 New-Inbox copy), DECISIONS-RULINGS 2026-07-17 — all read*
+*2026-08-01. v0.2 same day — §1 gains the named APPLY MODE block (the governed copy is the*
+*STAGED harness a3e678f2…, so the fix diff's base is not in Box: whole-file version-replace,*
+*never a substrate patch, no intervening 3574c2d1… apply) and N10 pins the same rule; prompted*
+*by a follow-up relay from the (still unreadable) brief. Supersedes v0.1 whole; v0.1 remains at*
+*git commit 0a2b0d0. NOT adversarially reviewed. NOT read-confirmed by JR. Not launchable.*
