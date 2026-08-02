@@ -1,4 +1,4 @@
-# STEP3-PACKAGE-AUDIT — independent audit of the fix-run step-3 review package — v1.1 2026-08-01
+# STEP3-PACKAGE-AUDIT — independent audit of the fix-run step-3 review package — v1.2 2026-08-01
 
 **Authority: NONE.** An audit record. It changes nothing, clears nothing, and authorises nothing.
 Output returns to the Level 1 project for review; nothing acts on it until then.
@@ -37,8 +37,11 @@ later the same session supplied three further brief requirements absent from the
 [U-RELAY]: emission of both deliverables as hash-verifiable text (a git branch this project
 cannot reach is a document nobody downstream can read); the verdict in the fixed form
 SEND / SEND WITH NAMED CHANGES / DO NOT SEND (§9); and two named findings, ruled on here as F8
-and F9. **If the brief carries requirements beyond these two relays, this session has not seen
-them and cannot claim compliance with them.**
+and F9. **A second supplementary relay** [U-RELAY] supplied the live state-cache identity this
+seat cannot resolve, and required two additions now carried as §10: the audit's REACH stated
+explicitly, and a map of which findings rest on state-cache content. **If the brief carries
+requirements beyond these relays, this session has not seen them and cannot claim compliance
+with them.**
 
 ---
 
@@ -226,18 +229,19 @@ FIX-RUN-REPORT §5 [U-DOC]:
 
 ## 6. THE VISIBILITY BOUNDARY — what this seat could not check, and why (the D6 section)
 
-**Every by-ID Box lookup outside `New Inbox` failed "Item not found" — 9 of 9:** GATE-V
+**Every by-ID Box lookup outside `New Inbox` failed "Item not found" — 10 of 10:** GATE-V
 `2289594143154`, Scope Registry `2327535678598`, SETPIN `2373446865036`, CODE-CHANGE template
 `2368457077961`, outbox originals `2378613515653`/`2378612293434`/`2378650309961`, governed
-harness `2296699168749`, frozen oracle `2367835811909` [all attempted this session].
+harness `2296699168749`, frozen oracle `2367835811909`, and the live state cache
+`2373971080457` [all attempted this session].
 
 **Classification under the §0 table, honestly: UNDECIDED from this seat — with a strong
 mundane explanation.** Box returns the same "Item not found" for a nonexistent item and for an
 item the caller cannot see. This seat is the Max Box account (`rodwel@me.com`), whose visible
 world is essentially the shared `New Inbox` plus a near-empty root (owned space ~37 KB). Two of
-the nine unresolvable IDs are files **this very account created** on 2026-07-30 [U-DOC transport
+the ten unresolvable IDs are files **this very account created** on 2026-07-30 [U-DOC transport
 JOB], so the dominant explanation is that collaboration on the exchange folder was withdrawn
-after the exchange completed (or the items moved) — **not** that nine governed objects vanished.
+after the exchange completed (or the items moved) — **not** that ten governed objects vanished.
 Per JR's 2026-07-28 ruling this is reported as a classification, and this read-only session
 STOPS at reporting: **no lockdown is declared and none is warranted on this evidence.** The
 practical consequence stands regardless: **step 3 cannot be assembled from this seat.** The
@@ -248,7 +252,8 @@ step-2 local `shasum` checks then cover the identity risk this seat could not.
 host at `~/l1-fixrun-2026-07-30/` and `~/Claude/Projects/Level 1 - Dev/` [U-DOC]); the
 `New outbox` originals themselves; the live governed-substrate state (whether the parallel Teams
 job has already begun step 4 today); every sha1 comparison involving those objects; and the
-MAX-SESSION-BRIEF (section 0).
+MAX-SESSION-BRIEF (section 0). **The consequence of this boundary for what the audit's clean
+result covers is stated as §10 — the audit's reach.**
 
 ---
 
@@ -307,15 +312,17 @@ v2.1 landed "same day" as v2.0 (2026-07-28), but the Box object's content-create
 2026-07-29T15:18:24Z [V-BOXMETA]. Most plausibly the file's on-disk mtime at upload post-dates
 its authorship date; not an integrity event; recorded so nobody rediscovers it as one.
 
-**F5 (MEDIUM, context hazard).** The packaged `Cowork-State-Cache.md` copy (f66a77a3…, 68,150 B,
-2026-07-31) matches NONE of the three cache states named in the launch prompt and report (v6
-0256a571…/30,276; v9 eb26201c…/54,735; local 141d825e…/61,394) [V-BOXMETA vs U-DOC]. It is
-plausibly the post-run 2026-07-31 sync — it DOES contain entries 0c0–0c3 and the 0d* corrections
-[V-READ] — but its §2 still carries two superseded instructions ("the Gemini pass is step 4 of
-5"; "USE THE EXISTING GATE (ii) SESSION") that its own entry 0c/0a and the launch OVERRIDEs
-correct. A reader who stops at §2 inherits both dead instructions. ACTION: the step-4 governing
-draft names the six-step count and the fresh-session route explicitly and does not delegate
-either to the cache.
+**F5 (MEDIUM, context hazard — and, per §10.3, understated as first issued).** The packaged
+`Cowork-State-Cache.md` copy (f66a77a3…, 68,150 B, 2026-07-31) matches NONE of the three cache
+states named in the launch prompt and report (v6 0256a571…/30,276; v9 eb26201c…/54,735; local
+141d825e…/61,394) [V-BOXMETA vs U-DOC]. It is plausibly a post-run sync — it DOES contain
+entries 0c0–0c3 and the 0d* corrections [V-READ] — but its §2 still carries two superseded
+instructions ("the Gemini pass is step 4 of 5"; "USE THE EXISTING GATE (ii) SESSION") that its
+own entry 0c/0a and the launch OVERRIDEs correct. A reader who stops at §2 inherits both dead
+instructions. ACTION: the step-4 governing draft names the six-step count and the fresh-session
+route explicitly and does not delegate either to the cache. **v1.2 note: the live cache is
+relayed as being at version 14 with nineteen entries this snapshot lacks (§10.3, U-RELAY) — so
+this finding is a floor, not a full account, of the snapshot's staleness.**
 
 **F6 (INFO, positive).** The package correctly implements every correction the fix run handed
 forward: fresh-session design, supplied-and-labelled baseline (inverted C3), C1/C2/C4 verbatim in
@@ -408,13 +415,102 @@ If the named changes cannot accompany the send as a durable artefact, the verdic
 unverifiable-driver round at step 3 — costs a full review round against a reviewer that is
 required to stop.
 
-Nothing found here blocks step 3 beyond the above. The gates that DO sit downstream are the ones
-the records already name: JR's read of the brief (still NOT CONFIRMED per the report [U-DOC]),
-the ratifications, and the ≥64 KB transport ruling — all ahead of step 4, per the companion
+**This verdict is bounded by §10: it covers the package's internal consistency and the identity
+agreement of the audited copies, not resolution against the wider substrate.** Nothing found
+here blocks step 3 beyond the above. The gates that DO sit downstream are the ones the records
+already name: JR's read of the brief (still NOT CONFIRMED per the report [U-DOC]), the
+ratifications, and the ≥64 KB transport ruling — all ahead of step 4, per the companion
 `STEP4-GOVERNING-DOC-DRAFT-v0.2-2026-08-01.md` (same branch, same session).
+
+---
+
+## 10. AUDIT REACH, AND WHAT RESTS ON THE STATE-CACHE SNAPSHOT
+
+*(Added at v1.2 on the second supplementary relay. A limit stated is a limit; a limit unstated
+becomes a clearance.)*
+
+### 10.1 REACH — what a clean result here did and did not cover
+
+**This audit ESTABLISHES three things and only these:**
+1. The **internal consistency** of the three step-3 instruments and their assembly procedure,
+   from full reads of all three plus the six surrounding records (§5): no contradiction, no
+   value collision, corrections carried coherently.
+2. The **identity agreement of what is in `New Inbox`**: the twelve files' Box server-side
+   sha1s/sizes against every recorded identity for them in the documents read (§§2–3).
+3. **Local byte-level verification of the git mirror** and re-execution of its gate (§4).
+
+**It does NOT establish resolution against the wider substrate.** Ten of ten by-ID lookups
+outside `New Inbox` failed from this seat (§6): governed tooling, `masters/`, build-outputs,
+the exchange originals, the live state cache — none was reachable, and no ClickUp record was
+reachable at all. **No statement in this audit clears any object this seat could not reach.**
+"Clean" here means *clean as far as `New Inbox` and the git mirror reach* — it is not a
+substrate clearance. Substrate-side resolution remains owed where the process already places
+it: the step-3 operator's RUN-CARD step 2 hash checks, and the step-4 executor's S1–S5 asserts
+in the companion draft.
+
+### 10.2 Which findings rest on state-cache content
+
+The state-cache copy this audit read is the 2026-07-31 `New Inbox` snapshot (2380192278530,
+f66a77a3…, 68,150 B [V-BOXMETA]) — **now known to be a stale snapshot; the live file is relayed
+as four versions ahead (§10.3).** Dependency of the findings on that snapshot, stated per
+finding:
+
+```
+RESTS ON THE SNAPSHOT (marked accordingly):
+  F5   By SUBJECT — the finding is ABOUT the snapshot. Its content-claims about that copy
+       remain valid (they are V-READ of that object); its framing as "plausibly the post-run
+       sync" is superseded: the snapshot is at least four versions and nineteen entries stale
+       [U-RELAY]. F5 is a FLOOR on the staleness, not a full account.
+  F8   One SUB-CLAIM only — "at package-authoring time only the prefix existed in any record"
+       is sourced to snapshot §5. A claim about the PAST state of records is not invalidated
+       by later versions, but it rests on a snapshot four versions stale and is marked so.
+       The operative ruling (bounded exposure; NC2) does not depend on it.
+
+CACHE AS CORROBORATION ONLY (stand without it):
+  F3   Rests on V-READ vs V-BOXMETA; snapshot 0b(i) merely corroborates.
+  F6   Rests on the instruments + launch OVERRIDEs; snapshot 0/0a is one agreeing record.
+  §5(3)  Template identity: snapshot §5 is ONE of four agreeing records.
+  §5(6)  The stale-template DETAIL (prefix 87e6876a…, console-handoff location) is
+         snapshot-sourced; the template's existence, 3,029 B size and hazard status come from
+         RUN-CARD P3 itself.
+
+NO STATE-CACHE DEPENDENCE:
+  F1, F2, F4, F7, F9.
+```
+
+**The stronger statement, made plainly: the VERDICT (§9) and all three NAMED CHANGES rest on
+zero cache-only claims.** NC1 derives from the card and prompt texts [V-READ] plus the statement
+document's identity [U-DOC report/launch]; NC2 from the prompt text and the report's full value;
+NC3 from RUN-CARD P3 and §6's reachability result. A corrected cache entry can therefore refine
+F5/F8's framing but cannot move the verdict.
+
+### 10.3 The live state cache — relayed identity, and this seat's attempted resolution
+
+Relayed by the Level 1 session [U-RELAY, repeated here as an unverified claim]: the live
+`Cowork-State-Cache.md` is Box `2373971080457`, **version 14, sha1
+`d3c842f89f00cdbad5d527c1b9cfd5838719acc1`, 96,063 B**, with four versions and nineteen entries
+(2026-07-30 → 2026-08-02) between the audited snapshot and the live file, including **six
+corrections to entries the snapshot still carries uncorrected**.
+
+**Attempted this session:** `get_file_details(2373971080457)` → "Item not found" — the tenth
+of ten (§6), consistent with the visibility boundary; this seat can neither confirm nor deny
+any of the relayed values, including which six entries are corrected. **Consequence for use:**
+any entry-level claim quoted in this audit from the snapshot (the 0c0–0c3 statuses, 0d3's
+open-items list, the bump-queue linking convention) may be superseded by up to nineteen unseen
+entries. The companion draft already routes around this hazard by construction: its S3 reads
+the LIVE cache at execution time and treats it as advisory, and its §1 carries the six-step
+count and fresh-session route directly rather than delegating either to any cache copy. No
+draft change is required by this relay.
+
+---
 
 *Change log: v1.0 2026-08-01 — first issue, produced read-only. v1.1 same day — added §9 verdict*
 *in the required SEND / SEND WITH NAMED CHANGES / DO NOT SEND form, and findings F8/F9 with*
-*rulings; all three requirements arrived by follow-up relay from the (still unreadable) brief.*
-*Supersedes v1.0 whole; v1.0 remains at git commit 0a2b0d0. Not adversarially reviewed; returns*
-*to Level 1 for review.*
+*rulings; requirements arrived by follow-up relay from the (still unreadable) brief. v1.2 same*
+*day — added §10 (audit reach; per-finding state-cache dependency; the relayed live-cache*
+*identity with this seat's failed resolution attempt, making the §6 count 10 of 10) and marked*
+*F5 as a floor on the snapshot's staleness; prompted by a second supplementary relay. NOTE: the*
+*companion draft v0.2 references this file by its v1.1 name; §1's provenance keys are unchanged*
+*and v1.2 supersedes v1.1 whole, so the reference remains valid in substance — the draft is*
+*deliberately not churned for a filename string. Supersedes v1.1 whole; v1.0 at git commit*
+*0a2b0d0, v1.1 at 19612b1. Not adversarially reviewed; returns to Level 1 for review.*
