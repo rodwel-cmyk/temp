@@ -1,0 +1,97 @@
+# ============================================================================
+# PROTOTYPE — NOT COMMITTED / NOT GOVERNED
+# Oracle generator - rules-as-data (S1) - sandbox parallel-validation only.
+# Authority: NONE. No Box/ClickUp write. NOT the governed Code-CLI build.
+# The governed build routes to the Code-CLI seat under GATE-V (see README).
+# ============================================================================
+schema: oracle-generator-rules-v0-PROTOTYPE
+
+# S5 version-lock. The generator stamps this into every manifest as
+# `oracle_version`, alongside a `rules_digest` (sha1 of this file's bytes).
+# The lock refuses on EITHER mismatch: a bumped version with unchanged rules,
+# or edited rules with an unbumped version. Absence is a refuse, not a pass.
+# BUMP THIS whenever anything below changes.
+rules_version: v0.2-PROTOTYPE   # v0.2: S8 - pin keys moved into data (pin_keys)
+
+provenance:
+  algorithm_source: "SET-IDENTITY-live-computation-2026-09-04.md (verbatim _set_sha1 from harness Box 2384141567519 lines 666-675, byte-identical to Box 2373463499360)"
+  relpaths_source:  "CHECKPOINT-oracle-codecli-2026-09-04.md section 4 (T1 lines 1205-1211 / T2 lines 1031-1037, character-identical)"
+  live_sha1_source: "inventory-390802629329-2026-09-04-1650Z.json  (Box folder 396978339615 = Cowork-Layer1-Tooling, under governance root 390802629329)"
+  sealed_sha1_source: "l1-fixrun-2026-07-30/build-inputs/oracle-model-SETPIN-2026-07-28.json  (schema l1-oracle-model-setpin-v1; independently corroborated by demo-pre/DEMO-SETPIN.json)"
+  corpus_bound: "390802629329 only (JR decision 2026-09-06, GENERATOR-INPUTS.md section 4). Absence claims are scoped to governed Box."
+
+# The set-sha1 aggregation. The single authoritative implementation lives in
+# oracle_gen.py::set_sha1 (verbatim from source). This block documents it.
+aggregation:
+  id: _set_sha1
+  definition: >
+    sha1 over the SORTED (relpath, per-file sha1hex) manifest, each entry
+    serialised as bytes  relpath + 0x00 + sha1hex + 0x0A  fed into ONE running
+    sha1; hexdigest is the set-sha1. Sorted -> deterministic; NUL separator ->
+    no relpath/hash boundary ambiguity; covers names AND contents, so a missing,
+    extra, renamed, or altered component always changes the set-sha1.
+  note: >
+    A looser paraphrase appears in some notes as "per-entry hash(...) -> concat
+    -> sha1". That is NOT the source algorithm; only the single-running-sha1 form
+    above reproduces the published pins (proven by validate).
+
+# ---------------------------------------------------------------------------
+# TWO-LEVEL PIN: an engine-set SECTION (SET layer) + a harness SECTION (FILE
+# layer), each pinned separately. Mirrors the "two-layer FILE a3e678f2 / SET
+# df59d6f6 pre-state" recorded in GENERATOR-INPUTS.md.
+# ---------------------------------------------------------------------------
+sections:
+
+  - id: engine_set
+    layer: SET
+    kind: set
+    aggregation: _set_sha1
+    corpus_root_folder_id: "396978339615"     # Cowork-Layer1-Tooling
+    members_ordered:                           # ENGINE_SET_RELPATHS, verbatim (16 elements)
+      - layer1_lint.py
+      - l1lint/__init__.py
+      - l1lint/checks.py
+      - l1lint/cli.py
+      - l1lint/dochygiene.py
+      - l1lint/engine.py
+      - l1lint/hygiene.py
+      - l1lint/loader.py
+      - l1lint/org_mirror.py
+      - l1lint/parsing.py
+      - l1lint/pins.py
+      - l1lint/selftest.py
+      - l1lint/xdoc.py
+      - manifest.yaml
+      - baseline.md
+      - test_layer1_lint.py
+    # S8: pin keys are DATA. `full` names the whole-set pin; each `subsets` key
+    # names a derived pin and lists the relpaths it excludes. A new derived pin,
+    # or a whole new section, is added here - never in the generator.
+    pin_keys:
+      full: set16_set_sha1
+      subsets:
+        engine15_set_sha1:                     # engine15 = the 16-set minus the harness member
+          - test_layer1_lint.py
+    expected_pins:
+      engine15_set_sha1:
+        value: "9520867753d0d26ec76e959d1a98a450d24255fa"
+        status: LIVE-POSITIVE
+      set16_set_sha1_live:
+        value: "df59d6f66748ba6e45e897ca724dc1126a3a536e"
+        status: LIVE-POSITIVE        # pre-apply live; BARRED-13 = re-derive at write time, never carry
+      set16_set_sha1_sealed:
+        value: "ccda65118beb01d742c60f86cea140828de2ad9d"
+        status: NEGATIVE-GUARD       # dead-by-design at the apply; NEVER asserted as the live pin
+
+  - id: harness
+    layer: FILE
+    kind: file
+    relpath: test_layer1_lint.py
+    corpus_root_folder_id: "396978339615"
+    expected_pins:
+      file_sha1_live:
+        value: "a3e678f22dd1b4a8e89005e4c1f5d668e4c92b85"   # governed harness (v6, 64,501 B)
+        status: LIVE-POSITIVE
+      file_sha1_sealed:
+        value: "3574c2d13a7f34f7cd8d1bac3543b05556e18ef9"   # pre-fix harness (92,385 B) -> makes the set-sha1 collapse to ccda6511
+        status: NEGATIVE-GUARD

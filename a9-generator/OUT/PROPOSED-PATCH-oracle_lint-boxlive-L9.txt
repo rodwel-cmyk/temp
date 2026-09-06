@@ -1,0 +1,26 @@
+--- oracle_lint.py (staged, sha1 7137aab2c1da72f017f317c06d1985eb8bd49f22)
++++ oracle_lint.py (PROPOSED, NOT APPLIED; needs rules_version/S5 bump + re-validate)
+@@ -161,12 +161,13 @@
+ def c_determinism(m, rules, rep, args):
+     """Regenerate from the manifest's declared corpus and compare bytes."""
+     kind = (m.get("corpus_source") or {}).get("kind")
+-    source = {"inventory": "live", "setpin": "sealed"}.get(kind)
++    source = {"inventory": "live", "setpin": "sealed", "boxlive": "boxlive"}.get(kind)
+     if not source:
+         return rep.add("L9 determinism", SKIP, "unrecognised corpus_source.kind=%r" % kind)
+     eng = G.section_by_id(rules, "engine_set")
+     try:
+-        corpus, meta = G.load_corpus(source, args.inventory, args.setpin, eng["corpus_root_folder_id"])
++        corpus, meta = G.load_corpus(source, args.inventory, args.setpin, eng["corpus_root_folder_id"],
++                                     getattr(args, "boxlive", None))
+     except SystemExit as e:
+         return rep.add("L9 determinism", SKIP, "corpus unavailable: %s" % e)
+     again = G.emit_json(G.generate(rules, corpus, meta))
+@@ -229,6 +230,7 @@
+                     help="promote findings to fail-closed (default is shadow / recommend-only)")
+     ap.add_argument("--inventory", default=G.DEF_INVENTORY)
+     ap.add_argument("--setpin", default=G.DEF_SETPIN)
++    ap.add_argument("--boxlive", default=os.path.join(G.HERE, "corpus-boxlive-2026-09-06.json"))
+     sys.exit(run(ap.parse_args()))
+ 
+ 

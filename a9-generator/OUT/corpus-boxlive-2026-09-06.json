@@ -1,0 +1,26 @@
+{
+  "_note": "PROTOTYPE / read-only. Per-file server-side sha1s READ from live Box on 2026-09-06 by the Teams Code-CLI seat, principal mail@rodwell.biz (10546707). No write of any kind. Sources: folder 396978339615 (Cowork-Layer1-Tooling, 4 governed files at root) + folder 403356419210 (l1lint/, 12 files). Values are READ, never invented. Used for the S10 re-pin DRY RUN only.",
+  "_source_folders": {
+    "root": "396978339615",
+    "l1lint": "403356419210"
+  },
+  "_read_at": "2026-09-06",
+  "files": {
+    "layer1_lint.py": "79db9696e92d6320bd909c1f621fc531caefed6a",
+    "manifest.yaml": "0397bfd11cfe8023aa7eb4808681d0bd598ddad3",
+    "baseline.md": "dd5da45a1f93963c6f1c381e9dcd292f6f79333d",
+    "test_layer1_lint.py": "a3e678f22dd1b4a8e89005e4c1f5d668e4c92b85",
+    "l1lint/__init__.py": "ffcc84384fbc969e7373d79eaf98705aec9ab2a7",
+    "l1lint/checks.py": "2b21e531ce1b97a49aaf08faa7836561dbd635a4",
+    "l1lint/cli.py": "b1fc79f470ebbe88b7e29f5a1f9e2fdf3005f425",
+    "l1lint/dochygiene.py": "6e82c80abd0e5ae0c8e9496ef107321a3967106b",
+    "l1lint/engine.py": "1a8e16fa7effb7d04ec9ef231bb8259c0560c202",
+    "l1lint/hygiene.py": "4032a64b30d3df63c6acc06c676fbf6c23d46a5e",
+    "l1lint/loader.py": "e753dd158ecf840264f347a8fd701ea39b5d3810",
+    "l1lint/org_mirror.py": "da11d42f916e9275c8c564d836f96e4d3153ec6d",
+    "l1lint/parsing.py": "af3289953daaffb5b1ccc14d03714dfe0d8f648f",
+    "l1lint/pins.py": "a658517293c218aa950f45b54ad81e9c1615186c",
+    "l1lint/selftest.py": "e65c0d558c5f7457aea3eafdc4415285a9396815",
+    "l1lint/xdoc.py": "53c6d212873123f7b5d9d186c422e88ea6ac17a3"
+  }
+}
